@@ -1,6 +1,6 @@
 import type {OnyxCollection, OnyxEntry} from 'react-native-onyx';
 import {getIsOffline} from '@libs/NetworkState';
-import {getLinkedTransactionID} from '@libs/ReportActionsUtils';
+import {getIOUReportIDFromReportActionPreview, getLinkedTransactionID} from '@libs/ReportActionsUtils';
 import {computeReportName} from '@libs/ReportNameUtils';
 import {generateIsEmptyReport, generateReportAttributes, hasVisibleReportFieldViolations, isArchivedReport, isPolicyAdmin, isPolicyExpenseChat, isValidReport} from '@libs/ReportUtils';
 import SidebarUtils from '@libs/SidebarUtils';
@@ -374,7 +374,7 @@ export default createOnyxDerivedValueConfig({
         );
 
         // Propagate errors from IOU reports to their parent chat reports.
-        const chatReportIDsWithErrors = new Set<string>();
+        const chatReportFixTargets = new Map<string, {actionTargetReportActionID: string; created: string}>();
         for (const report of Object.values(reports)) {
             if (!report?.reportID) {
                 continue;
@@ -387,16 +387,29 @@ export default createOnyxDerivedValueConfig({
             // we still need to propagate the error up so the parent shows the indicator.
             const attributes = reportAttributes[report.reportID];
             if (
-                report.chatReportID &&
-                report.reportID !== report.chatReportID &&
-                (attributes?.needsParentChatErrorPropagation || attributes?.brickRoadStatus === CONST.BRICK_ROAD_INDICATOR_STATUS.ERROR)
+                !report.chatReportID ||
+                report.reportID === report.chatReportID ||
+                (!attributes?.needsParentChatErrorPropagation && attributes?.brickRoadStatus !== CONST.BRICK_ROAD_INDICATOR_STATUS.ERROR)
             ) {
-                chatReportIDsWithErrors.add(report.chatReportID);
+                continue;
+            }
+
+            const chatReportActions = reportActions?.[`${ONYXKEYS.COLLECTION.REPORT_ACTIONS}${report.chatReportID}`];
+            const reportPreviewAction = Object.values(chatReportActions ?? {}).find((action) => getIOUReportIDFromReportActionPreview(action) === report.reportID);
+            const actionTargetReportActionID = reportPreviewAction?.reportActionID;
+            if (!actionTargetReportActionID) {
+                continue;
+            }
+
+            const created = reportPreviewAction.created ?? '';
+            const existingTarget = chatReportFixTargets.get(report.chatReportID);
+            if (!existingTarget || created > existingTarget.created) {
+                chatReportFixTargets.set(report.chatReportID, {actionTargetReportActionID, created});
             }
         }
 
         // Apply the error status to the parent chat reports.
-        for (const chatReportID of chatReportIDsWithErrors) {
+        for (const [chatReportID, {actionTargetReportActionID}] of chatReportFixTargets) {
             if (!reportAttributes[chatReportID]) {
                 continue;
             }
@@ -407,6 +420,7 @@ export default createOnyxDerivedValueConfig({
                 ...reportAttributes[chatReportID],
                 brickRoadStatus: CONST.BRICK_ROAD_INDICATOR_STATUS.ERROR,
                 actionBadge: CONST.REPORT.ACTION_BADGE.FIX,
+                actionTargetReportActionID,
             };
         }
 
