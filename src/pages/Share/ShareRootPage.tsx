@@ -41,7 +41,7 @@ function showErrorAlert(title: string, message: string) {
 function ShareRootPage() {
     const [currentAttachment] = useOnyx(ONYXKEYS.SHARE_TEMP_FILE);
 
-    const {validateFiles} = useFilesValidation(addValidatedShareFile);
+    const {validateFiles, PDFValidationComponent, ErrorModal} = useFilesValidation(addValidatedShareFile);
     const isTextShared = currentAttachment?.mimeType === 'txt';
 
     const validateFileIfNecessary = useCallback(
@@ -193,6 +193,8 @@ function ShareRootPage() {
                     <TabNavigatorSkeleton reasonAttributes={reasonAttributes} />
                 )}
             </View>
+            {PDFValidationComponent}
+            {ErrorModal}
         </ScreenWrapper>
     );
 }

@@ -122,8 +122,10 @@ function SubmitDetailsPage({
     const [errorMessage, setErrorMessage] = useState<string | undefined>(undefined);
 
     const {isBetaEnabled} = usePermissions();
-    const fileUri = shouldUsePreValidatedFile ? (validFilesToUpload?.uri ?? '') : (currentAttachment?.content ?? '');
-    const fileName = shouldUsePreValidatedFile ? getFileName(validFilesToUpload?.uri ?? CONST.ATTACHMENT_IMAGE_DEFAULT_NAME) : getFileName(currentAttachment?.content ?? '');
+    const fileUri = shouldUsePreValidatedFile ? (validFilesToUpload?.uri ?? currentAttachment?.content ?? '') : (currentAttachment?.content ?? '');
+    const fileName = shouldUsePreValidatedFile
+        ? getFileName(validFilesToUpload?.uri ?? currentAttachment?.content ?? CONST.ATTACHMENT_IMAGE_DEFAULT_NAME)
+        : getFileName(currentAttachment?.content ?? '');
     const fileType = shouldUsePreValidatedFile ? (validFilesToUpload?.type ?? CONST.RECEIPT_ALLOWED_FILE_TYPES.JPEG) : (currentAttachment?.mimeType ?? '');
     const [hasOnlyPersonalPolicies = false] = useOnyx(ONYXKEYS.COLLECTION.POLICY, {selector: hasOnlyPersonalPoliciesUtil});
 

@@ -11,6 +11,7 @@ function clearShareData() {
     Onyx.multiSet({
         [ONYXKEYS.SHARE_TEMP_FILE]: null,
         [ONYXKEYS.SHARE_UNKNOWN_USER_DETAILS]: null,
+        [ONYXKEYS.VALIDATED_FILE_OBJECT]: null,
     });
 }
 

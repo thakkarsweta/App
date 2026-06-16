@@ -2888,6 +2888,11 @@ function saveReportDraft(reportID: string, report: Report) {
     return Onyx.set(`${ONYXKEYS.COLLECTION.REPORT_DRAFT}${reportID}`, report);
 }
 
+/** Deletes the report draft from Onyx */
+function deleteReportDraft(reportID: string) {
+    return Onyx.set(`${ONYXKEYS.COLLECTION.REPORT_DRAFT}${reportID}`, null);
+}
+
 /**
  * Saves the comment left by the user as they are typing. By saving this data the user can switch between chats, close
  * tab, refresh etc without worrying about loosing what they typed out.
@@ -7883,6 +7888,7 @@ export {
     deleteAppReport,
     getOptimisticChatReport,
     saveReportDraft,
+    deleteReportDraft,
     moveIOUReportToPolicy,
     moveIOUReportToPolicyAndInviteSubmitter,
     convertIOUReportToExpenseReport,

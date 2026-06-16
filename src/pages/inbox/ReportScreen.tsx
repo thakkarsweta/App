@@ -2,6 +2,7 @@ import {PortalHost} from '@gorhom/portal';
 import React from 'react';
 import type {ViewStyle} from 'react-native';
 import {View} from 'react-native';
+import type {OnyxEntry} from 'react-native-onyx';
 import CollapsibleHeaderOnKeyboard from '@components/CollapsibleHeaderOnKeyboard';
 import OfflineWithFeedback from '@components/OfflineWithFeedback';
 import ScreenWrapper from '@components/ScreenWrapper';
@@ -20,6 +21,7 @@ import {isMoneyRequestReport} from '@libs/ReportUtils';
 import CONST from '@src/CONST';
 import ONYXKEYS from '@src/ONYXKEYS';
 import SCREENS from '@src/SCREENS';
+import type {Report} from '@src/types/onyx';
 import AccountManagerBanner from './AccountManagerBanner';
 import {AgentZeroStatusProvider} from './AgentZeroStatusContext';
 import {ConciergeDraftProvider} from './ConciergeDraftContext';
@@ -44,6 +46,13 @@ import {ActionListContext} from './ReportScreenContext';
 import type ReportScreenNavigationProps from './types';
 import WideRHPReceiptPanel from './WideRHPReceiptPanel';
 
+const reportPendingActionSelector = (report: OnyxEntry<Report>) =>
+    report?.pendingFields?.addWorkspaceRoom ?? report?.pendingFields?.createChat ?? report?.pendingFields?.createReport ?? report?.pendingFields?.reportName;
+
+const reportCreationErrorsSelector = (report: OnyxEntry<Report>) => report?.errorFields?.addWorkspaceRoom ?? report?.errorFields?.createChat ?? report?.errorFields?.createReport;
+
+const isMoneyRequestReportSelector = (reportEntry: OnyxEntry<Report>) => !!reportEntry && isMoneyRequestReport(reportEntry);
+
 type ReportScreenProps = ReportScreenNavigationProps;
 
 type ReportScreenEditMessageProviderProps = {
@@ -56,7 +65,7 @@ type ReportScreenEditMessageProviderProps = {
 /** Money-request screens need transaction-thread derivation; others use the lighter provider path. */
 function ReportScreenEditMessageProvider({reportID, children}: ReportScreenEditMessageProviderProps) {
     const [shouldDeriveMoneyRequestTransactionThread] = useOnyx(`${ONYXKEYS.COLLECTION.REPORT}${reportID}`, {
-        selector: (reportEntry) => !!reportEntry && isMoneyRequestReport(reportEntry),
+        selector: isMoneyRequestReportSelector,
     });
 
     if (shouldDeriveMoneyRequestTransactionThread !== true) {
@@ -87,13 +96,12 @@ function ReportScreen({route, navigation}: ReportScreenProps) {
 
     const actionListValue = useActionListContextValue();
 
-    const [reportPendingActionAndErrors] = useOnyx(`${ONYXKEYS.COLLECTION.REPORT}${reportIDFromRoute}`, {
-        selector: (r) => ({
-            reportPendingAction: r?.pendingFields?.addWorkspaceRoom ?? r?.pendingFields?.createChat ?? r?.pendingFields?.createReport ?? r?.pendingFields?.reportName,
-            reportErrors: r?.errorFields?.addWorkspaceRoom ?? r?.errorFields?.createChat ?? r?.errorFields?.createReport,
-        }),
+    const [reportPendingAction] = useOnyx(`${ONYXKEYS.COLLECTION.REPORT}${reportIDFromRoute}`, {
+        selector: reportPendingActionSelector,
     });
-    const {reportPendingAction, reportErrors} = reportPendingActionAndErrors ?? {};
+    const [reportErrors] = useOnyx(`${ONYXKEYS.COLLECTION.REPORT}${reportIDFromRoute}`, {
+        selector: reportCreationErrorsSelector,
+    });
 
     const dismissReportCreationError = () => {
         Navigation.goBack(undefined, {

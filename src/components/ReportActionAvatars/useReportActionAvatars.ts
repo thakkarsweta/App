@@ -1,3 +1,4 @@
+import {useMemo} from 'react';
 import type {OnyxEntry} from 'react-native-onyx';
 import type {ValueOf} from 'type-fest';
 import {usePersonalDetails} from '@components/OnyxListItemProvider';
@@ -32,7 +33,7 @@ import {getDefaultAvatar} from '@libs/UserAvatarUtils';
 import CONST from '@src/CONST';
 import ONYXKEYS from '@src/ONYXKEYS';
 import {getReportActionByIDSelector} from '@src/selectors/ReportAction';
-import type {InvitedEmailsToAccountIDs, OnyxInputOrEntry, Policy, Report, ReportAction} from '@src/types/onyx';
+import type {InvitedEmailsToAccountIDs, OnyxInputOrEntry, Policy, Report, ReportAction, ReportActions} from '@src/types/onyx';
 import type {Icon as IconType} from '@src/types/onyx/OnyxCommon';
 import useReportPreviewSenderID from './useReportPreviewSenderID';
 
@@ -63,12 +64,8 @@ function useReportActionAvatars({
 }) {
     const defaultAvatars = useDefaultAvatars();
     /* Get avatar type */
-    const allPersonalDetails = usePersonalDetails();
+    const personalDetails = usePersonalDetails();
     const {formatPhoneNumber, translate} = useLocalize();
-    const [personalDetailsFromSnapshot] = useOnyx(ONYXKEYS.PERSONAL_DETAILS_LIST);
-    // When the search hash changes, personalDetails from the snapshot will be undefined if it hasn't been fetched yet.
-    // Therefore, we will fall back to allPersonalDetails while the data is being fetched.
-    const personalDetails = personalDetailsFromSnapshot ?? allPersonalDetails;
 
     const isReportAChatReport = report?.type === CONST.REPORT.TYPE.CHAT && report?.chatType !== CONST.REPORT.CHAT_TYPE.TRIP_ROOM;
 
@@ -80,8 +77,9 @@ function useReportActionAvatars({
 
     const derivedActionReportID = iouReport?.parentReportActionID ? (chatReport?.reportID ?? iouReport?.chatReportID) : reportChatReport?.reportID;
     const derivedActionID = iouReport?.parentReportActionID ?? (!iouReport ? chatReport?.parentReportActionID : undefined);
+    const derivedActionSelector = useMemo(() => (actions: OnyxEntry<ReportActions>) => getReportActionByIDSelector(actions, derivedActionID), [derivedActionID]);
     const [derivedAction] = useOnyx(`${ONYXKEYS.COLLECTION.REPORT_ACTIONS}${getNonEmptyStringOnyxID(!passedAction ? derivedActionReportID : undefined)}`, {
-        selector: (actions) => getReportActionByIDSelector(actions, derivedActionID),
+        selector: derivedActionSelector,
     });
 
     const action = passedAction ?? derivedAction;

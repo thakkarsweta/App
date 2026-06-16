@@ -1,6 +1,7 @@
 import type {StackScreenProps} from '@react-navigation/stack';
+import {hasSeenTourSelector} from '@selectors/Onboarding';
 import React, {useCallback, useContext, useEffect, useMemo, useState} from 'react';
-import {View} from 'react-native';
+import {InteractionManager, View} from 'react-native';
 import type {OnyxEntry} from 'react-native-onyx';
 import AttachmentPreview from '@components/AttachmentPreview';
 import HeaderWithBackButton from '@components/HeaderWithBackButton';
@@ -21,7 +22,8 @@ import useReportAttributes from '@hooks/useReportAttributes';
 import useReportIsArchived from '@hooks/useReportIsArchived';
 import useReportOrReportDraft from '@hooks/useReportOrReportDraft';
 import useThemeStyles from '@hooks/useThemeStyles';
-import {addAttachmentWithComment, addComment, openReport} from '@libs/actions/Report';
+import {addAttachmentWithComment, addComment, deleteReportDraft, openReport} from '@libs/actions/Report';
+import {clearUnknownUserDetails} from '@libs/actions/Share';
 import {canUseTouchScreen} from '@libs/DeviceCapabilities';
 import {getFileName, readFileAsync} from '@libs/fileDownload/FileUtils';
 import Navigation from '@libs/Navigation/Navigation';
@@ -55,6 +57,7 @@ function ShareDetailsPage({route}: ShareDetailsPageProps) {
     const [currentAttachment] = useOnyx(ONYXKEYS.SHARE_TEMP_FILE);
     const [validatedFile] = useOnyx(ONYXKEYS.VALIDATED_FILE_OBJECT);
     const [introSelected] = useOnyx(ONYXKEYS.NVP_INTRO_SELECTED);
+    const [isSelfTourViewed] = useOnyx(ONYXKEYS.NVP_ONBOARDING, {selector: hasSeenTourSelector});
     const [betas] = useOnyx(ONYXKEYS.BETAS);
     const delegateAccountID = useDelegateAccountID();
 
@@ -77,14 +80,18 @@ function ShareDetailsPage({route}: ShareDetailsPageProps) {
     );
 
     const shouldShowAttachment = !isTextShared;
-    const fileSource = shouldUsePreValidatedFile ? (validatedFile?.uri ?? '') : (currentAttachment?.content ?? '');
+    const fileSource = shouldUsePreValidatedFile ? (validatedFile?.uri ?? currentAttachment?.content ?? '') : (currentAttachment?.content ?? '');
+    const isShareReady = !!currentAttachment && (!shouldUsePreValidatedFile || !!validatedFile);
+    const isWaitingForValidation = shouldUsePreValidatedFile && !!currentAttachment && !validatedFile;
 
     // Only get file name for actual files to avoid URI decoding errors on text content
     const validateFileName = useMemo(() => {
         if (!shouldShowAttachment) {
             return '';
         }
-        return shouldUsePreValidatedFile ? getFileName(validatedFile?.uri ?? CONST.ATTACHMENT_IMAGE_DEFAULT_NAME) : getFileName(currentAttachment?.content ?? '');
+        return shouldUsePreValidatedFile
+            ? getFileName(validatedFile?.uri ?? currentAttachment?.content ?? CONST.ATTACHMENT_IMAGE_DEFAULT_NAME)
+            : getFileName(currentAttachment?.content ?? '');
     }, [shouldShowAttachment, shouldUsePreValidatedFile, validatedFile?.uri, currentAttachment?.content]);
 
     const fileType = shouldUsePreValidatedFile ? (validatedFile?.type ?? CONST.SHARE_FILE_MIMETYPE.JPEG) : (currentAttachment?.mimeType ?? '');
@@ -110,70 +117,101 @@ function ShareDetailsPage({route}: ShareDetailsPageProps) {
         showErrorAlert(errorTitle, errorMessage);
     }, [errorTitle, errorMessage]);
 
+    const isDraft = isDraftReport(reportOrAccountID);
+
+    const getInviteeLogin = useCallback((): string | undefined => {
+        const loginFromUnknownUser = unknownUserDetails?.login ?? unknownUserDetails?.displayName;
+        if (loginFromUnknownUser) {
+            return loginFromUnknownUser;
+        }
+
+        const invitee = displayReport.participantsList?.find((participant) => participant.accountID !== personalDetail.accountID);
+        return invitee?.login ?? invitee?.displayName;
+    }, [unknownUserDetails?.login, unknownUserDetails?.displayName, displayReport.participantsList, personalDetail.accountID]);
+
+    const openReportForDraftChatIfNeeded = useCallback((): boolean => {
+        if (!isDraft || !report?.reportID) {
+            return true;
+        }
+
+        const inviteeLogin = getInviteeLogin();
+        if (!inviteeLogin) {
+            return false;
+        }
+
+        openReport({
+            reportID: report.reportID,
+            introSelected,
+            participants: [{login: inviteeLogin}],
+            personalDetails,
+            newReportObject: report,
+            betas,
+            isSelfTourViewed,
+        });
+        deleteReportDraft(report.reportID);
+        clearUnknownUserDetails();
+        return true;
+    }, [isDraft, report, getInviteeLogin, introSelected, personalDetails, betas, isSelfTourViewed]);
+
     if (isEmptyObject(report)) {
         return <NotFoundPage />;
     }
-
-    const isDraft = isDraftReport(reportOrAccountID);
 
     const handleShare = () => {
         if (!currentAttachment || (shouldUsePreValidatedFile && !validatedFile)) {
             return;
         }
 
-        if (isTextShared) {
-            addComment({
-                report,
-                notifyReportID: report.reportID,
-                ancestors,
-                text: message,
-                timezoneParam: personalDetail.timezone ?? CONST.DEFAULT_TIME_ZONE,
-                currentUserAccountID: personalDetail.accountID,
-                delegateAccountID,
-            });
-            const routeToNavigate = ROUTES.REPORT_WITH_ID.getRoute(reportOrAccountID);
-            Navigation.revealRouteBeforeDismissingModal(routeToNavigate);
+        if (isDraft && !getInviteeLogin()) {
+            showErrorAlert(translate('attachmentPicker.attachmentError'), translate('common.genericErrorMessage'));
             return;
         }
 
-        readFileAsync(
-            fileSource,
-            validateFileName,
-            (file) => {
-                if (isDraft) {
-                    openReport({
-                        reportID: report.reportID,
-                        introSelected,
-                        participants:
-                            displayReport.participantsList
-                                ?.filter((u) => u.accountID !== personalDetail.accountID)
-                                .map((u) => ({
-                                    login: u.login ?? '',
-                                })) ?? [],
-                        personalDetails,
-                        newReportObject: report,
-                        betas,
-                    });
-                }
-                if (report.reportID) {
-                    addAttachmentWithComment({
-                        report,
-                        notifyReportID: report.reportID,
-                        ancestors,
-                        attachments: file,
-                        currentUserAccountID: personalDetail.accountID,
-                        text: message,
-                        timezone: personalDetail.timezone,
-                        delegateAccountID,
-                    });
-                }
+        const routeToNavigate = ROUTES.REPORT_WITH_ID.getRoute(reportOrAccountID);
+        Navigation.revealRouteBeforeDismissingModal(routeToNavigate);
 
-                const routeToNavigate = ROUTES.REPORT_WITH_ID.getRoute(reportOrAccountID);
-                Navigation.revealRouteBeforeDismissingModal(routeToNavigate);
-            },
-            () => {},
-            fileType,
-        );
+        // Defer Onyx writes until after navigation so list items on this screen are unmounted before PERSONAL_DETAILS_LIST updates.
+        InteractionManager.runAfterInteractions(() => {
+            if (!openReportForDraftChatIfNeeded()) {
+                return;
+            }
+
+            if (isTextShared) {
+                addComment({
+                    report,
+                    notifyReportID: report.reportID,
+                    ancestors,
+                    text: message,
+                    timezoneParam: personalDetail.timezone ?? CONST.DEFAULT_TIME_ZONE,
+                    currentUserAccountID: personalDetail.accountID,
+                    delegateAccountID,
+                });
+                return;
+            }
+
+            readFileAsync(
+                fileSource,
+                validateFileName,
+                (file) => {
+                    if (report.reportID) {
+                        addAttachmentWithComment({
+                            report,
+                            notifyReportID: report.reportID,
+                            ancestors,
+                            attachments: file,
+                            currentUserAccountID: personalDetail.accountID,
+                            text: message,
+                            timezone: personalDetail.timezone,
+                            delegateAccountID,
+                        });
+                    }
+                },
+                () => {
+                    showErrorAlert(translate('attachmentPicker.attachmentError'), translate('attachmentPicker.errorWhileSelectingCorruptedAttachment'));
+                },
+                fileType,
+            );
+        });
     };
 
     return (
@@ -268,7 +306,11 @@ function ShareDetailsPage({route}: ShareDetailsPageProps) {
                     </PressableWithoutFeedback>
                 </View>
             </ScrollView>
-            <ShareButton onPress={handleShare} />
+            <ShareButton
+                onPress={handleShare}
+                isDisabled={!isShareReady}
+                isLoading={isWaitingForValidation}
+            />
         </ScreenWrapper>
     );
 }

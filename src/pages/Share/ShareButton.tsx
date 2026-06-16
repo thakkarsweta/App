@@ -6,9 +6,11 @@ import useThemeStyles from '@hooks/useThemeStyles';
 
 type ShareButtonProps = {
     onPress: () => void;
+    isDisabled?: boolean;
+    isLoading?: boolean;
 };
 
-function ShareButton({onPress}: ShareButtonProps) {
+function ShareButton({onPress, isDisabled = false, isLoading = false}: ShareButtonProps) {
     const styles = useThemeStyles();
     const {translate} = useLocalize();
 
@@ -20,6 +22,8 @@ function ShareButton({onPress}: ShareButtonProps) {
                 text={translate('common.share')}
                 style={styles.w100}
                 onPress={onPress}
+                isDisabled={isDisabled}
+                isLoading={isLoading}
             />
         </FixedFooter>
     );

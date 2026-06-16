@@ -61,7 +61,8 @@ const useOnyx: OriginalUseOnyx = <TKey extends OnyxKey, TReturnValue = OnyxValue
     }
 
     const useOnyxOptions = options as UseOnyxOptions<OnyxKey, OnyxValue<OnyxKey>> | undefined;
-    const {selector: selectorProp, ...optionsWithoutSelector} = useOnyxOptions ?? {};
+    const selectorProp = useOnyxOptions?.selector;
+    const reuseConnection = useOnyxOptions?.reuseConnection;
 
     // Determine if we should use snapshot data based on search state and key
     const shouldUseSnapshot = isOnSearch && !!currentSearchHash && isSnapshotCompatibleKey && !shouldUseLiveData;
@@ -75,7 +76,20 @@ const useOnyx: OriginalUseOnyx = <TKey extends OnyxKey, TReturnValue = OnyxValue
         return (data: OnyxValue<OnyxKey> | undefined) => selectorProp(getKeyData(data as SearchResults, key));
     }, [selectorProp, shouldUseSnapshot, key]);
 
-    const onyxOptions: UseOnyxOptions<OnyxKey, OnyxValue<OnyxKey>> = {...optionsWithoutSelector, selector};
+    const onyxOptions = useMemo((): UseOnyxOptions<OnyxKey, OnyxValue<OnyxKey>> | undefined => {
+        if (!selector && reuseConnection === undefined) {
+            return undefined;
+        }
+
+        const opts: UseOnyxOptions<OnyxKey, OnyxValue<OnyxKey>> = {};
+        if (selector) {
+            opts.selector = selector;
+        }
+        if (reuseConnection !== undefined) {
+            opts.reuseConnection = reuseConnection;
+        }
+        return opts;
+    }, [selector, reuseConnection]);
     const snapshotKey = shouldUseSnapshot ? (`${ONYXKEYS.COLLECTION.SNAPSHOT}${currentSearchHash}` as OnyxKey) : key;
 
     const originalResult = originalUseOnyx(snapshotKey, onyxOptions, dependencies);
