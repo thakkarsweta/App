@@ -15,7 +15,7 @@ import {convertToBackendAmount, convertToFrontendAmountAsString, getLocalizedCur
 import {calculateAmount, isMovingTransactionFromTrackExpense, isParticipantP2P} from '@libs/IOUUtils';
 import Navigation from '@libs/Navigation/Navigation';
 import {shouldEnableNegative} from '@libs/ReportUtils';
-import {calculateTaxAmount, getTaxCode, getTaxValue} from '@libs/TransactionUtils';
+import {calculateTaxAmount, getDefaultTaxCode, getTaxCode, getTaxValue} from '@libs/TransactionUtils';
 import IOURequestStepCurrencyModal from '@pages/iou/request/step/IOURequestStepCurrencyModal';
 import {resetSplitShares, setDraftSplitTransaction, setSplitShares} from '@userActions/IOU/Split';
 import CONST from '@src/CONST';
@@ -240,11 +240,11 @@ function AmountField({
         buildAndSaveSplitShares(updatedAmount, value);
         persistMainDraftTotal(updatedAmount, value);
 
-        if (isMovingTransactionFromTrackExpense(action)) {
-            const taxCode = value !== policy?.outputCurrency ? policy?.taxRates?.foreignTaxDefault : policy?.taxRates?.defaultExternalID;
-            if (taxCode) {
-                setMoneyRequestTaxRate(transactionID, taxCode);
-                const taxPercentage = getTaxValue(policy, transactionForHandlers, taxCode) ?? '';
+        if (policy?.tax?.trackingEnabled) {
+            const defaultTaxCode = getDefaultTaxCode(policy, transactionForHandlers, value);
+            if (defaultTaxCode) {
+                setMoneyRequestTaxRate(transactionID, defaultTaxCode);
+                const taxPercentage = getTaxValue(policy, transactionForHandlers, defaultTaxCode) ?? '';
                 const taxAmount = convertToBackendAmount(calculateTaxAmount(taxPercentage, updatedAmount, getCurrencyDecimals(value)));
                 setMoneyRequestTaxAmount(transactionID, taxAmount);
             }

@@ -17,14 +17,17 @@ jest.mock('@libs/DistanceRequestUtils', () => ({
     },
 }));
 
+const mockGetDefaultTaxCode = jest.fn(() => 'tax_default');
+const mockHasTaxRateWithMatchingValue = jest.fn(() => false);
+
 jest.mock('@libs/TransactionUtils', () => ({
     calculateTaxAmount: (taxPercentage: string, taxableAmount: number) => {
         const pct = Number.parseFloat(String(taxPercentage).replace('%', '')) || 0;
         return (taxableAmount * pct) / 100;
     },
-    getDefaultTaxCode: () => 'tax_default',
+    getDefaultTaxCode: (...args: unknown[]) => mockGetDefaultTaxCode(...args),
     getTaxValue: () => '10%',
-    hasTaxRateWithMatchingValue: () => false,
+    hasTaxRateWithMatchingValue: (...args: unknown[]) => mockHasTaxRateWithMatchingValue(...args),
 }));
 
 type Params = Parameters<typeof useTaxAmount>[0];
@@ -41,6 +44,13 @@ const baseParams: Params = {
 };
 
 describe('useTaxAmount', () => {
+    beforeEach(() => {
+        mockGetDefaultTaxCode.mockReset();
+        mockGetDefaultTaxCode.mockReturnValue('tax_default');
+        mockHasTaxRateWithMatchingValue.mockReset();
+        mockHasTaxRateWithMatchingValue.mockReturnValue(false);
+    });
+
     it('returns the default tax code and value from policy resolution', () => {
         const {result} = renderHook(() => useTaxAmount(baseParams));
         expect(result.current.defaultTaxCode).toBe('tax_default');
@@ -61,6 +71,32 @@ describe('useTaxAmount', () => {
 
     it('shouldKeepCurrentTaxSelection is false when policy has no matching tax rate', () => {
         const {result} = renderHook(() => useTaxAmount(baseParams));
+        expect(result.current.shouldKeepCurrentTaxSelection).toBe(false);
+    });
+
+    it('shouldKeepCurrentTaxSelection is false when tax code is a stale automatic default for the new currency', () => {
+        mockGetDefaultTaxCode.mockImplementation((_policy, transaction: {currency?: string}, currency?: string) => {
+            const effectiveCurrency = currency ?? transaction?.currency;
+            return effectiveCurrency === 'EUR' ? 'tax_foreign' : 'tax_default';
+        });
+        mockHasTaxRateWithMatchingValue.mockReturnValue(true);
+
+        const policy = {
+            taxRates: {
+                defaultExternalID: 'tax_default',
+                foreignTaxDefault: 'tax_foreign',
+            },
+        } as unknown as OnyxTypes.Policy;
+
+        const {result} = renderHook(() =>
+            useTaxAmount({
+                ...baseParams,
+                transaction: {transactionID: 'txn1', amount: 1000, currency: 'EUR', taxCode: 'tax_default'} as unknown as OnyxTypes.Transaction,
+                policy,
+                previousTransactionCurrency: undefined,
+            }),
+        );
+
         expect(result.current.shouldKeepCurrentTaxSelection).toBe(false);
     });
 });

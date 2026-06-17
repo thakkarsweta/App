@@ -26,15 +26,7 @@ import {requestMoney} from '@libs/actions/IOU/TrackExpense';
 import {setTransactionReport} from '@libs/actions/Transaction';
 import {convertToBackendAmount} from '@libs/CurrencyUtils';
 import getNonEmptyStringOnyxID from '@libs/getNonEmptyStringOnyxID';
-import {
-    calculateDefaultReimbursable,
-    getExistingTransactionID,
-    isMovingTransactionFromTrackExpense,
-    isParticipantP2P,
-    navigateToConfirmationPage,
-    navigateToParticipantPage,
-    resolveOptimisticChatReportID,
-} from '@libs/IOUUtils';
+import {calculateDefaultReimbursable, getExistingTransactionID, isParticipantP2P, navigateToConfirmationPage, navigateToParticipantPage, resolveOptimisticChatReportID} from '@libs/IOUUtils';
 import cleanupAfterSkipConfirmSubmit from '@libs/Navigation/helpers/cleanupAfterSkipConfirmSubmit';
 import {submitWithDismissFirst} from '@libs/Navigation/helpers/submitWithDismissFirst';
 import type {WriteOverrides} from '@libs/Navigation/helpers/submitWithDismissFirst';
@@ -233,14 +225,17 @@ function IOURequestStepAmount({
         isSaveButtonPressed.current = true;
         const amountInSmallestCurrencyUnits = convertToBackendAmount(Number.parseFloat(amount));
 
-        setMoneyRequestAmount(transactionID, amountInSmallestCurrencyUnits, selectedCurrency || CONST.CURRENCY.USD, shouldKeepUserInput, hasReceipt(transaction));
+        const selectedCurr = selectedCurrency || CONST.CURRENCY.USD;
+        const transactionCurrency = getCurrency(transaction);
 
-        if (isMovingTransactionFromTrackExpense(action)) {
-            const taxCode = selectedCurrency !== policy?.outputCurrency ? policy?.taxRates?.foreignTaxDefault : policy?.taxRates?.defaultExternalID;
-            if (taxCode) {
-                setMoneyRequestTaxRate(transactionID, taxCode);
-                const taxPercentage = getTaxValue(policy, transaction, taxCode) ?? '';
+        setMoneyRequestAmount(transactionID, amountInSmallestCurrencyUnits, selectedCurr, shouldKeepUserInput, hasReceipt(transaction));
+
+        if (policy?.tax?.trackingEnabled && selectedCurr !== transactionCurrency) {
+            const defaultTaxCode = getDefaultTaxCode(policy, transaction, selectedCurr) ?? '';
+            if (defaultTaxCode) {
+                const taxPercentage = getTaxValue(policy, transaction, defaultTaxCode) ?? '';
                 const taxAmount = convertToBackendAmount(calculateTaxAmount(taxPercentage, amountInSmallestCurrencyUnits, decimals));
+                setMoneyRequestTaxRate(transactionID, defaultTaxCode);
                 setMoneyRequestTaxAmount(transactionID, taxAmount);
             }
         }
