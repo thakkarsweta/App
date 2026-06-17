@@ -7,6 +7,7 @@ import {
     isCategoryDescriptionRequired,
     isCategoryMissing,
     processCategoryNameSegments,
+    syncMissingCategoryViolation,
 } from '@libs/CategoryUtils';
 import {convertToDisplayString} from '@libs/CurrencyUtils';
 import CONST from '@src/CONST';
@@ -31,6 +32,50 @@ describe(`isMissingCategory`, () => {
     it('returns false if category is a valid string', () => {
         expect(isCategoryMissing('Travel')).toBe(false);
         expect(isCategoryMissing('Meals')).toBe(false);
+    });
+});
+
+describe('syncMissingCategoryViolation', () => {
+    const policyWithRequiredCategory = {requiresCategory: true} as Policy;
+    const policyWithoutRequiredCategory = {requiresCategory: false} as Policy;
+
+    it('adds missingCategory violation when category is required and missing', () => {
+        const result = syncMissingCategoryViolation([], policyWithRequiredCategory, '', false);
+        expect(result).toEqual([
+            {
+                name: CONST.VIOLATIONS.MISSING_CATEGORY,
+                type: CONST.VIOLATION_TYPES.VIOLATION,
+                showInReview: true,
+            },
+        ]);
+    });
+
+    it('removes missingCategory violation when requiresCategory is turned off', () => {
+        const existingViolations = [{name: CONST.VIOLATIONS.MISSING_CATEGORY, type: CONST.VIOLATION_TYPES.VIOLATION, showInReview: true}];
+        const result = syncMissingCategoryViolation(existingViolations, policyWithoutRequiredCategory, '', false);
+        expect(result).toEqual([]);
+    });
+
+    it('removes missingCategory violation when category is set', () => {
+        const existingViolations = [{name: CONST.VIOLATIONS.MISSING_CATEGORY, type: CONST.VIOLATION_TYPES.VIOLATION, showInReview: true}];
+        const result = syncMissingCategoryViolation(existingViolations, policyWithRequiredCategory, 'Travel', false);
+        expect(result).toEqual([]);
+    });
+
+    it('does not add missingCategory violation for self DM expenses', () => {
+        const result = syncMissingCategoryViolation([], policyWithRequiredCategory, '', true);
+        expect(result).toEqual([]);
+    });
+
+    it('does not add missingCategory violation when category is being analyzed', () => {
+        const result = syncMissingCategoryViolation([], policyWithRequiredCategory, '', false, false, true);
+        expect(result).toEqual([]);
+    });
+
+    it('removes missingCategory violation on invoice reports', () => {
+        const existingViolations = [{name: CONST.VIOLATIONS.MISSING_CATEGORY, type: CONST.VIOLATION_TYPES.VIOLATION, showInReview: true}];
+        const result = syncMissingCategoryViolation(existingViolations, policyWithRequiredCategory, '', false, true);
+        expect(result).toEqual([]);
     });
 });
 

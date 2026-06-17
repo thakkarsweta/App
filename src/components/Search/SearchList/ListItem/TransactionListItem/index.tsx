@@ -22,10 +22,12 @@ import useResponsiveLayout from '@hooks/useResponsiveLayout';
 import type {TransactionPreviewData} from '@libs/actions/Search';
 import {handleActionButtonPress as handleActionButtonPressUtil} from '@libs/actions/Search';
 import {syncMissingAttendeesViolation} from '@libs/AttendeeUtils';
+import {syncMissingCategoryViolation} from '@libs/CategoryUtils';
 import getNonEmptyStringOnyxID from '@libs/getNonEmptyStringOnyxID';
 import {isAttendeeTrackingEnabled} from '@libs/PolicyUtils';
-import {isInvoiceReport} from '@libs/ReportUtils';
+import {isInvoiceReport, isSelfDM} from '@libs/ReportUtils';
 import {
+    isCategoryBeingAnalyzed,
     isDeletedTransaction as isDeletedTransactionUtil,
     isViolationDismissed,
     mergeProhibitedViolations,
@@ -153,7 +155,16 @@ function TransactionListItem<TItem extends ListItem>({
         isInvoice,
     );
 
-    const transactionViolations = mergeProhibitedViolations(attendeeOnyxViolations);
+    const categoryOnyxViolations = syncMissingCategoryViolation(
+        attendeeOnyxViolations,
+        policyForViolations,
+        transaction?.category ?? transactionItem.category ?? '',
+        isSelfDM(reportForViolations),
+        isInvoice,
+        isCategoryBeingAnalyzed(transaction ?? transactionItem),
+    );
+
+    const transactionViolations = mergeProhibitedViolations(categoryOnyxViolations);
 
     const {isDelegateAccessRestricted} = useDelegateNoAccessState();
     const {showDelegateNoAccessModal} = useDelegateNoAccessActions();

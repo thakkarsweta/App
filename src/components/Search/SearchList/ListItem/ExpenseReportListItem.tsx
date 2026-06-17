@@ -28,10 +28,11 @@ import useThemeStyles from '@hooks/useThemeStyles';
 import useTransactionsAndViolationsForReport from '@hooks/useTransactionsAndViolationsForReport';
 import {handleActionButtonPress} from '@libs/actions/Search';
 import {syncMissingAttendeesViolation} from '@libs/AttendeeUtils';
+import {syncMissingCategoryViolation} from '@libs/CategoryUtils';
 import getNonEmptyStringOnyxID from '@libs/getNonEmptyStringOnyxID';
 import {isAttendeeTrackingEnabled} from '@libs/PolicyUtils';
-import {getNonHeldAndFullAmount, isInvoiceReport, isOpenExpenseReport, isProcessingReport, isReportPendingDelete, shouldShowMarkAsDone} from '@libs/ReportUtils';
-import {isOnHold, isViolationDismissed, shouldShowViolation, showPendingCardTransactionsBlockModal} from '@libs/TransactionUtils';
+import {getNonHeldAndFullAmount, isInvoiceReport, isOpenExpenseReport, isProcessingReport, isReportPendingDelete, isSelfDM, shouldShowMarkAsDone} from '@libs/ReportUtils';
+import {isCategoryBeingAnalyzed, isOnHold, isViolationDismissed, shouldShowViolation, showPendingCardTransactionsBlockModal} from '@libs/TransactionUtils';
 import variables from '@styles/variables';
 import CONST from '@src/CONST';
 import ONYXKEYS from '@src/ONYXKEYS';
@@ -146,8 +147,8 @@ function ExpenseReportListItem<TItem extends ListItem>({
     const policyForViolations = parentPolicy ?? snapshotPolicy;
     const reportForViolations = parentReport ?? snapshotReport;
 
-    // Sync missingAttendees violation at render time for each transaction in the report
-    // This ensures violations show immediately when category settings change, without needing to click the row
+    // Sync missingAttendees and missingCategory violations at render time for each transaction in the report
+    // This ensures violations show immediately when policy settings change, without needing to click the row
     const hasSyncedMissingAttendeesViolation = useMemo(() => {
         if (!isAttendeeTrackingEnabled(policyForViolations)) {
             return false;
@@ -174,6 +175,27 @@ function ExpenseReportListItem<TItem extends ListItem>({
             return violations.some((violation) => violation.name === CONST.VIOLATIONS.MISSING_ATTENDEES);
         });
     }, [reportItem, policyCategories, policyForViolations, reportForViolations, currentUserDetails]);
+
+    const hasSyncedMissingCategoryViolation = useMemo(() => {
+        const isInvoice = isInvoiceReport(reportItem) || reportItem.type === CONST.REPORT.TYPE.INVOICE;
+        return reportItem?.transactions?.some((transaction) => {
+            const relevantViolations = (transaction.violations ?? []).filter(
+                (violation) =>
+                    !isViolationDismissed(transaction, violation, currentUserDetails.email ?? '', currentUserDetails.accountID, reportForViolations, policyForViolations) &&
+                    shouldShowViolation(reportForViolations, policyForViolations, violation.name, currentUserDetails.email ?? '', false, transaction),
+            );
+
+            const violations = syncMissingCategoryViolation(
+                relevantViolations,
+                policyForViolations,
+                transaction.category ?? '',
+                isSelfDM(reportForViolations),
+                isInvoice,
+                isCategoryBeingAnalyzed(transaction),
+            );
+            return violations.some((violation) => violation.name === CONST.VIOLATIONS.MISSING_CATEGORY);
+        });
+    }, [reportItem, policyForViolations, reportForViolations, currentUserDetails]);
 
     const {isDelegateAccessRestricted} = useDelegateNoAccessState();
     const {showDelegateNoAccessModal} = useDelegateNoAccessActions();
@@ -309,10 +331,10 @@ function ExpenseReportListItem<TItem extends ListItem>({
 
     // Show violation description if either:
     // 1. Pre-computed hasVisibleViolations from search data, OR
-    // 2. Synced missingAttendees violation computed at render time (for stale data)
+    // 2. Synced missingAttendees/missingCategory violations computed at render time (for stale data)
     // We're using || instead of ?? because the variables are boolean
     // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-    const hasAnyVisibleViolations = reportItem?.hasVisibleViolations || hasSyncedMissingAttendeesViolation;
+    const hasAnyVisibleViolations = reportItem?.hasVisibleViolations || hasSyncedMissingAttendeesViolation || hasSyncedMissingCategoryViolation;
 
     const getDescription = useMemo(() => {
         if (reportItem?.isRejectedReport) {

@@ -136,6 +136,44 @@ function isCategoryMissing(category: string | undefined): boolean {
     return category === CONST.SEARCH.CATEGORY_EMPTY_VALUE || category === CONST.SEARCH.CATEGORY_DEFAULT_VALUE;
 }
 
+/**
+ * Syncs the missingCategory violation with current policy settings.
+ * - Adds the violation when it should show but isn't present from BE
+ * - Removes stale BE violation when policy settings changed (e.g., requiresCategory was turned off)
+ */
+function syncMissingCategoryViolation<T extends {name: string}>(
+    violations: T[],
+    policy: Policy | undefined,
+    category: string | undefined,
+    isSelfDM: boolean,
+    isInvoice = false,
+    isCategoryBeingAnalyzed = false,
+): T[] {
+    if (isInvoice) {
+        return violations.filter((violation) => violation.name !== CONST.VIOLATIONS.MISSING_CATEGORY);
+    }
+
+    const hasMissingCategoryViolation = violations.some((violation) => violation.name === CONST.VIOLATIONS.MISSING_CATEGORY);
+    const shouldShowMissingCategory = !!policy?.requiresCategory && isCategoryMissing(category) && !isSelfDM && !isCategoryBeingAnalyzed;
+
+    if (!hasMissingCategoryViolation && shouldShowMissingCategory) {
+        return [
+            ...violations,
+            {
+                name: CONST.VIOLATIONS.MISSING_CATEGORY,
+                type: CONST.VIOLATION_TYPES.VIOLATION,
+                showInReview: true,
+            } as unknown as T,
+        ];
+    }
+
+    if (hasMissingCategoryViolation && !shouldShowMissingCategory) {
+        return violations.filter((violation) => violation.name !== CONST.VIOLATIONS.MISSING_CATEGORY);
+    }
+
+    return violations;
+}
+
 function isCategoryDescriptionRequired(policyCategories: PolicyCategories | undefined, category: string | undefined, areRulesEnabled: boolean | undefined): boolean {
     if (!policyCategories || !category || !areRulesEnabled) {
         return false;
@@ -226,6 +264,7 @@ export {
     updateCategoryInMccGroup,
     getEnabledCategoriesCount,
     isCategoryMissing,
+    syncMissingCategoryViolation,
     isCategoryDescriptionRequired,
     getCategoryGLCode,
     getDecodedCategoryName,
