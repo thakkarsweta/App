@@ -1,5 +1,6 @@
 import Onyx from 'react-native-onyx';
 import type {OnyxCollection} from 'react-native-onyx';
+import {getAgentDeletionTombstoneAccountIDKey, getAgentDeletionTombstoneLoginKey} from '@libs/AgentUtils';
 import {write} from '@libs/API';
 import {WRITE_COMMANDS} from '@libs/API/types';
 import Navigation from '@libs/Navigation/Navigation';
@@ -16,12 +17,12 @@ jest.mock('@libs/Navigation/Navigation', () => ({navigate: jest.fn(), goBack: je
 const mockWrite = jest.mocked(write);
 const mockGoBack = jest.mocked(Navigation.goBack);
 
-function getWriteOptions(): {optimisticData: AnyOnyxUpdate[]; successData: AnyOnyxUpdate[]; failureData: AnyOnyxUpdate[]} {
+function getWriteOptions(): {optimisticData: AnyOnyxUpdate[]; successData: AnyOnyxUpdate[]; failureData: AnyOnyxUpdate[]; finallyData: AnyOnyxUpdate[]} {
     const options = mockWrite.mock.calls.at(0)?.at(2);
     if (!options || typeof options !== 'object' || !('optimisticData' in options)) {
         throw new Error('write was not called with optimistic options');
     }
-    return options as {optimisticData: AnyOnyxUpdate[]; successData: AnyOnyxUpdate[]; failureData: AnyOnyxUpdate[]};
+    return options as {optimisticData: AnyOnyxUpdate[]; successData: AnyOnyxUpdate[]; failureData: AnyOnyxUpdate[]; finallyData: AnyOnyxUpdate[]};
 }
 
 function getOptimisticAccountID(optimisticData: AnyOnyxUpdate[]): number {
@@ -218,6 +219,7 @@ describe('createAgent', () => {
         const promptRollback = successData.find((u) => u.key === `${ONYXKEYS.COLLECTION.SHARED_NVP_AGENT_PROMPT}${accountID}`);
 
         expect((personalDetailRollback?.value as Record<string, unknown>)[accountID]).toBeNull();
+        expect(promptRollback?.onyxMethod).toBe('set');
         expect(promptRollback?.value).toBeNull();
     });
 
@@ -383,28 +385,39 @@ describe('updateAgentPrompt', () => {
 });
 
 describe('deleteAgent', () => {
+    const AGENT_LOGIN = 'agent@expensifail.com';
+    const TEST_AGENT_PROMPT = {prompt: 'Reject gambling expenses.'};
+    const TEST_PERSONAL_DETAILS = {accountID: TEST_ACCOUNT_ID, displayName: 'Test Agent', login: AGENT_LOGIN};
+
     beforeEach(() => {
         jest.clearAllMocks();
     });
 
     it('calls write with DELETE_AGENT command and correct params', () => {
-        deleteAgent(TEST_ACCOUNT_ID);
+        deleteAgent(TEST_ACCOUNT_ID, AGENT_LOGIN, undefined, TEST_AGENT_PROMPT, TEST_PERSONAL_DETAILS);
 
         expect(mockWrite).toHaveBeenCalledWith(WRITE_COMMANDS.DELETE_AGENT, {agentAccountID: TEST_ACCOUNT_ID}, expect.any(Object));
     });
 
-    it('optimistic data merges pendingAction DELETE on the prompt key', () => {
-        deleteAgent(TEST_ACCOUNT_ID);
+    it('optimistic data immediately removes the agent prompt and personal details', () => {
+        deleteAgent(TEST_ACCOUNT_ID, AGENT_LOGIN, undefined, TEST_AGENT_PROMPT, TEST_PERSONAL_DETAILS);
 
         const {optimisticData} = getWriteOptions();
+        const tombstoneUpdate = optimisticData.find((u) => u.key === ONYXKEYS.AGENT_DELETION_TOMBSTONES);
         const promptUpdate = optimisticData.find((u) => u.key === `${ONYXKEYS.COLLECTION.SHARED_NVP_AGENT_PROMPT}${TEST_ACCOUNT_ID}`);
+        const personalDetailUpdate = optimisticData.find((u) => u.key === ONYXKEYS.PERSONAL_DETAILS_LIST);
 
-        expect(promptUpdate?.onyxMethod).toBe('merge');
-        expect(promptUpdate?.value).toMatchObject({pendingAction: 'delete'});
+        expect(tombstoneUpdate?.value).toMatchObject({
+            [getAgentDeletionTombstoneAccountIDKey(TEST_ACCOUNT_ID)]: true,
+            [getAgentDeletionTombstoneLoginKey(AGENT_LOGIN)]: true,
+        });
+        expect(promptUpdate?.onyxMethod).toBe('set');
+        expect(promptUpdate?.value).toBeNull();
+        expect((personalDetailUpdate?.value as Record<string, unknown>)[TEST_ACCOUNT_ID]).toBeNull();
     });
 
     it('success data sets the prompt key to null', () => {
-        deleteAgent(TEST_ACCOUNT_ID);
+        deleteAgent(TEST_ACCOUNT_ID, AGENT_LOGIN, undefined, TEST_AGENT_PROMPT, TEST_PERSONAL_DETAILS);
 
         const {successData} = getWriteOptions();
         const promptUpdate = successData.find((u) => u.key === `${ONYXKEYS.COLLECTION.SHARED_NVP_AGENT_PROMPT}${TEST_ACCOUNT_ID}`);
@@ -414,7 +427,7 @@ describe('deleteAgent', () => {
     });
 
     it('success data nulls the personal detail entry', () => {
-        deleteAgent(TEST_ACCOUNT_ID);
+        deleteAgent(TEST_ACCOUNT_ID, AGENT_LOGIN, undefined, TEST_AGENT_PROMPT, TEST_PERSONAL_DETAILS);
 
         const {successData} = getWriteOptions();
         const personalDetailUpdate = successData.find((u) => u.key === ONYXKEYS.PERSONAL_DETAILS_LIST);
@@ -422,25 +435,58 @@ describe('deleteAgent', () => {
         expect((personalDetailUpdate?.value as Record<string, unknown>)[TEST_ACCOUNT_ID]).toBeNull();
     });
 
-    it('failure data merges pendingAction DELETE and errors on the prompt key', () => {
-        deleteAgent(TEST_ACCOUNT_ID);
+    it('failure data rolls back policy employee removals but keeps the agent deleted from the list', () => {
+        deleteAgent(TEST_ACCOUNT_ID, AGENT_LOGIN, undefined, TEST_AGENT_PROMPT, TEST_PERSONAL_DETAILS);
 
-        const {failureData} = getWriteOptions();
+        const {failureData, finallyData} = getWriteOptions();
         const promptUpdate = failureData.find((u) => u.key === `${ONYXKEYS.COLLECTION.SHARED_NVP_AGENT_PROMPT}${TEST_ACCOUNT_ID}`);
+        const personalDetailUpdate = failureData.find((u) => u.key === ONYXKEYS.PERSONAL_DETAILS_LIST);
+        const tombstoneUpdate = failureData.find((u) => u.key === ONYXKEYS.AGENT_DELETION_TOMBSTONES);
+        const finallyPromptUpdate = finallyData.find((u) => u.key === `${ONYXKEYS.COLLECTION.SHARED_NVP_AGENT_PROMPT}${TEST_ACCOUNT_ID}`);
 
-        expect(promptUpdate?.onyxMethod).toBe('merge');
-        expect(promptUpdate?.value).toMatchObject({pendingAction: 'delete'});
-        expect((promptUpdate?.value as Record<string, unknown>)?.errors).toBeTruthy();
+        expect(tombstoneUpdate).toBeUndefined();
+        expect(promptUpdate).toBeUndefined();
+        expect(personalDetailUpdate).toBeUndefined();
+        expect(finallyPromptUpdate?.onyxMethod).toBe('set');
+        expect(finallyPromptUpdate?.value).toBeNull();
     });
 
     it('calls Navigation.goBack after issuing the write', () => {
-        deleteAgent(TEST_ACCOUNT_ID);
+        deleteAgent(TEST_ACCOUNT_ID, AGENT_LOGIN, undefined, TEST_AGENT_PROMPT, TEST_PERSONAL_DETAILS);
 
         expect(mockGoBack).toHaveBeenCalledTimes(1);
     });
 
+    it('removes a pending-add agent locally without calling DELETE_AGENT', () => {
+        const mergeSpy = jest.spyOn(Onyx, 'merge').mockResolvedValue(undefined);
+        const setSpy = jest.spyOn(Onyx, 'set').mockResolvedValue(undefined);
+
+        deleteAgent(TEST_ACCOUNT_ID, undefined, undefined, {prompt: 'New prompt', pendingAction: CONST.RED_BRICK_ROAD_PENDING_ACTION.ADD});
+
+        expect(mockWrite).not.toHaveBeenCalled();
+        expect(mergeSpy).toHaveBeenCalledWith(ONYXKEYS.PERSONAL_DETAILS_LIST, {[TEST_ACCOUNT_ID]: null});
+        expect(setSpy).toHaveBeenCalledWith(`${ONYXKEYS.COLLECTION.SHARED_NVP_AGENT_PROMPT}${TEST_ACCOUNT_ID}`, null);
+        expect(mockGoBack).toHaveBeenCalledTimes(1);
+
+        mergeSpy.mockRestore();
+        setSpy.mockRestore();
+    });
+
+    it('removes an optimistic agent without a login locally without calling DELETE_AGENT', () => {
+        const mergeSpy = jest.spyOn(Onyx, 'merge').mockResolvedValue(undefined);
+        const setSpy = jest.spyOn(Onyx, 'set').mockResolvedValue(undefined);
+
+        deleteAgent(TEST_ACCOUNT_ID, undefined, undefined, TEST_AGENT_PROMPT, {accountID: TEST_ACCOUNT_ID, displayName: 'Test Agent', isOptimisticPersonalDetail: true});
+
+        expect(mockWrite).not.toHaveBeenCalled();
+        expect(mergeSpy).toHaveBeenCalledWith(ONYXKEYS.PERSONAL_DETAILS_LIST, {[TEST_ACCOUNT_ID]: null});
+        expect(setSpy).toHaveBeenCalledWith(`${ONYXKEYS.COLLECTION.SHARED_NVP_AGENT_PROMPT}${TEST_ACCOUNT_ID}`, null);
+
+        mergeSpy.mockRestore();
+        setSpy.mockRestore();
+    });
+
     describe('cascade to policies containing the agent', () => {
-        const AGENT_EMAIL = 'agent@expensifail.com';
         const OTHER_EMAIL = 'submitter@expensifail.com';
         const OWNER_EMAIL = 'owner@expensifail.com';
         const POLICY_ID = 'POLICY1';
@@ -453,23 +499,23 @@ describe('deleteAgent', () => {
                 owner: OWNER_EMAIL,
                 approver: OWNER_EMAIL,
                 employeeList: {
-                    [AGENT_EMAIL]: {email: AGENT_EMAIL, submitsTo: AGENT_EMAIL, forwardsTo: OWNER_EMAIL},
-                    [OTHER_EMAIL]: {email: OTHER_EMAIL, submitsTo: AGENT_EMAIL},
+                    [AGENT_LOGIN]: {email: AGENT_LOGIN, submitsTo: AGENT_LOGIN, forwardsTo: OWNER_EMAIL},
+                    [OTHER_EMAIL]: {email: OTHER_EMAIL, submitsTo: AGENT_LOGIN},
                 },
             },
         });
 
-        it('marks agent employeeList entry as pending DELETE optimistically', () => {
-            deleteAgent(TEST_ACCOUNT_ID, AGENT_EMAIL, buildPolicies());
+        it('removes the agent employeeList entry optimistically', () => {
+            deleteAgent(TEST_ACCOUNT_ID, AGENT_LOGIN, buildPolicies(), TEST_AGENT_PROMPT, TEST_PERSONAL_DETAILS);
 
             const {optimisticData} = getWriteOptions();
             const policyUpdate = optimisticData.find((u) => u.key === policyKey);
-            const employees = (policyUpdate?.value as {employeeList: Record<string, {pendingAction: string}>})?.employeeList;
-            expect(employees?.[AGENT_EMAIL]).toEqual({pendingAction: 'delete'});
+            const employees = (policyUpdate?.value as {employeeList: Record<string, unknown>})?.employeeList;
+            expect(employees?.[AGENT_LOGIN]).toBeNull();
         });
 
         it('leaves other employees and approver chains untouched so the workflow card still renders', () => {
-            deleteAgent(TEST_ACCOUNT_ID, AGENT_EMAIL, buildPolicies());
+            deleteAgent(TEST_ACCOUNT_ID, AGENT_LOGIN, buildPolicies(), TEST_AGENT_PROMPT, TEST_PERSONAL_DETAILS);
 
             const {optimisticData} = getWriteOptions();
             const policyUpdate = optimisticData.find((u) => u.key === policyKey);
@@ -480,21 +526,22 @@ describe('deleteAgent', () => {
         });
 
         it('nulls the agent employeeList entry on success', () => {
-            deleteAgent(TEST_ACCOUNT_ID, AGENT_EMAIL, buildPolicies());
+            deleteAgent(TEST_ACCOUNT_ID, AGENT_LOGIN, buildPolicies(), TEST_AGENT_PROMPT, TEST_PERSONAL_DETAILS);
 
             const {successData} = getWriteOptions();
             const policyUpdate = successData.find((u) => u.key === policyKey);
             const employees = (policyUpdate?.value as {employeeList: Record<string, unknown>})?.employeeList;
-            expect(employees?.[AGENT_EMAIL]).toBeNull();
+            expect(employees?.[AGENT_LOGIN]).toBeNull();
         });
 
-        it('restores agent pendingAction with errors on failure', () => {
-            deleteAgent(TEST_ACCOUNT_ID, AGENT_EMAIL, buildPolicies());
+        it('restores the agent employeeList entry with errors on failure', () => {
+            deleteAgent(TEST_ACCOUNT_ID, AGENT_LOGIN, buildPolicies(), TEST_AGENT_PROMPT, TEST_PERSONAL_DETAILS);
 
             const {failureData} = getWriteOptions();
             const policyUpdate = failureData.find((u) => u.key === policyKey);
-            const agentEntry = (policyUpdate?.value as {employeeList: Record<string, {pendingAction?: string; errors?: unknown}>})?.employeeList[AGENT_EMAIL];
-            expect(agentEntry?.pendingAction).toBe('delete');
+            const agentEntry = (policyUpdate?.value as {employeeList: Record<string, {pendingAction?: string; errors?: unknown; email?: string}>})?.employeeList[AGENT_LOGIN];
+            expect(agentEntry?.pendingAction).toBeNull();
+            expect(agentEntry?.email).toBe(AGENT_LOGIN);
             expect(agentEntry?.errors).toBeTruthy();
         });
 
@@ -508,7 +555,7 @@ describe('deleteAgent', () => {
                     employeeList: {[OWNER_EMAIL]: {email: OWNER_EMAIL}},
                 },
             };
-            deleteAgent(TEST_ACCOUNT_ID, AGENT_EMAIL, policies);
+            deleteAgent(TEST_ACCOUNT_ID, AGENT_LOGIN, policies, TEST_AGENT_PROMPT, TEST_PERSONAL_DETAILS);
 
             const {optimisticData} = getWriteOptions();
             expect(optimisticData.find((u) => u.key === policyKey)).toBeUndefined();

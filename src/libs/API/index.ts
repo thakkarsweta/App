@@ -4,7 +4,18 @@ import type {SetRequired} from 'type-fest';
 import {resolveDuplicationConflictAction, resolveEnableFeatureConflicts} from '@libs/actions/RequestConflictUtils';
 import type {AnyRequestMatcher, EnablePolicyFeatureCommand} from '@libs/actions/RequestConflictUtils';
 import Log from '@libs/Log';
-import {FailureTracking, handleDeletedAccount, HandleUnusedOptimisticID, LoadTest, Logging, Pagination, Reauthentication, SaveResponseInOnyx, SupportalPermission} from '@libs/Middleware';
+import {
+    FailureTracking,
+    FilterDeletedAgentsFromOnyxResponse,
+    handleDeletedAccount,
+    HandleUnusedOptimisticID,
+    LoadTest,
+    Logging,
+    Pagination,
+    Reauthentication,
+    SaveResponseInOnyx,
+    SupportalPermission,
+} from '@libs/Middleware';
 import FraudMonitoring from '@libs/Middleware/FraudMonitoring';
 import SentryServerTiming from '@libs/Middleware/SentryServerTiming';
 import {push as pushToSequentialQueue, waitForIdle as waitForSequentialQueueIdle} from '@libs/Network/SequentialQueue';
@@ -46,6 +57,9 @@ addMiddleware(SupportalPermission);
 addMiddleware(HandleUnusedOptimisticID);
 
 addMiddleware(Pagination);
+
+// Strip tombstoned agents from API responses before they are merged into Onyx.
+addMiddleware(FilterDeletedAgentsFromOnyxResponse);
 
 // SentryServerTiming - Tracks server round-trip time for configured command groups via Sentry spans.
 addMiddleware(SentryServerTiming);

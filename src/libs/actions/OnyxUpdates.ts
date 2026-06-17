@@ -1,6 +1,7 @@
 import type {OnyxKey, OnyxUpdate} from 'react-native-onyx';
 import Onyx from 'react-native-onyx';
 import type {Merge} from 'type-fest';
+import {getAgentDeletionTombstones, recordAgentDeletionsFromOnyxUpdates, stripTombstonedAgentsFromOnyxUpdates} from '@libs/AgentUtils';
 import {SIDE_EFFECT_REQUEST_COMMANDS, WRITE_COMMANDS} from '@libs/API/types';
 import Log from '@libs/Log';
 import PusherUtils from '@libs/PusherUtils';
@@ -37,7 +38,14 @@ function applyHTTPSOnyxUpdates<TKey extends OnyxKey>(request: Request<TKey>, res
     // First apply any onyx data updates that are being sent back from the API. We wait for this to complete and then
     // apply successData or failureData. This ensures that we do not update any pending, loading, or other UI states contained
     // in successData/failureData until after the component has received and API data.
-    const onyxDataUpdatePromise = response.onyxData ? updateHandler(response.onyxData) : Promise.resolve();
+    const onyxDataUpdatePromise = response.onyxData
+        ? (() => {
+              const deletionTombstones = getAgentDeletionTombstones();
+              const filteredOnyxData = stripTombstonedAgentsFromOnyxUpdates(response.onyxData as Array<OnyxUpdate<TKey>>, deletionTombstones);
+              recordAgentDeletionsFromOnyxUpdates(filteredOnyxData as Array<OnyxUpdate<TKey>>);
+              return updateHandler(filteredOnyxData);
+          })()
+        : Promise.resolve();
 
     return onyxDataUpdatePromise
         .then(() => {
@@ -98,7 +106,13 @@ function applyAirshipOnyxUpdates<TKey extends OnyxKey>(updates: Array<OnyxUpdate
     });
 
     airshipEventsPromise = updates
-        .reduce((promise, update) => promise.then(() => Onyx.update(update.data as Array<OnyxUpdate<TKey>>)), airshipEventsPromise)
+        .reduce((promise, update) => {
+            return promise.then(() => {
+                const updateData = update.data as Array<OnyxUpdate<TKey>>;
+                recordAgentDeletionsFromOnyxUpdates(updateData);
+                return Onyx.update(updateData);
+            });
+        }, airshipEventsPromise)
         .then(() => {
             Log.info('[OnyxUpdateManager] Done applying Airship updates', false, {lastUpdateID});
         });

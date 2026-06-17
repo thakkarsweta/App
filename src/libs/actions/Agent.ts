@@ -1,5 +1,6 @@
 import Onyx from 'react-native-onyx';
 import type {OnyxCollection, OnyxCollectionInputValue} from 'react-native-onyx';
+import {getAgentDeletionTombstoneAccountIDKey, getAgentDeletionTombstoneLoginKey, initAgentDeletionGuard, purgeResurrectedDeletedAgents} from '@libs/AgentUtils';
 import {read, write} from '@libs/API';
 import {READ_COMMANDS, WRITE_COMMANDS} from '@libs/API/types';
 import {AGENT_AVATARS} from '@libs/Avatars/AgentAvatarCatalog';
@@ -12,8 +13,22 @@ import CONST from '@src/CONST';
 import ONYXKEYS from '@src/ONYXKEYS';
 import ROUTES from '@src/ROUTES';
 import type {Policy} from '@src/types/onyx';
+import type AgentPrompt from '@src/types/onyx/AgentPrompt';
+import type PersonalDetails from '@src/types/onyx/PersonalDetails';
 import type PolicyEmployee from '@src/types/onyx/PolicyEmployee';
 import type {AnyOnyxUpdate} from '@src/types/onyx/Request';
+
+function buildAgentDeletionTombstoneValue(accountID: number, agentLogin?: string): Record<string, boolean> {
+    const tombstones: Record<string, boolean> = {
+        [getAgentDeletionTombstoneAccountIDKey(accountID)]: true,
+    };
+
+    if (agentLogin) {
+        tombstones[getAgentDeletionTombstoneLoginKey(agentLogin)] = true;
+    }
+
+    return tombstones;
+}
 
 function openAgentsPage() {
     read(READ_COMMANDS.OPEN_AGENTS_PAGE, null);
@@ -68,7 +83,7 @@ function createAgent(
             value: {[optimisticAccountID]: null},
         },
         {
-            onyxMethod: Onyx.METHOD.MERGE,
+            onyxMethod: Onyx.METHOD.SET,
             key: `${ONYXKEYS.COLLECTION.SHARED_NVP_AGENT_PROMPT}${optimisticAccountID}`,
             value: null,
         },
@@ -262,54 +277,61 @@ function updateAgentAvatar(
     write(WRITE_COMMANDS.UPDATE_AGENT_AVATAR, params, {optimisticData, successData, failureData});
 }
 
-function deleteAgent(accountID: number, agentLogin?: string, allPolicies?: OnyxCollection<Policy>) {
-    const optimisticData: AnyOnyxUpdate[] = [
+function deleteAgent(accountID: number, agentLogin?: string, allPolicies?: OnyxCollection<Policy>, agentPrompt?: AgentPrompt | null, personalDetails?: PersonalDetails | null) {
+    const numericAccountID = Number(accountID);
+    const promptKey = `${ONYXKEYS.COLLECTION.SHARED_NVP_AGENT_PROMPT}${numericAccountID}`;
+
+    // Agents that only exist locally (CREATE_AGENT still in flight or never succeeded) are not on the
+    // server yet, so DELETE_AGENT would fail. Drop them from Onyx instead.
+    const shouldDeleteLocally = agentPrompt?.pendingAction === CONST.RED_BRICK_ROAD_PENDING_ACTION.ADD || personalDetails?.isOptimisticPersonalDetail || !agentLogin;
+    const tombstoneValue = buildAgentDeletionTombstoneValue(numericAccountID, agentLogin);
+    const keepAgentDeletedData: AnyOnyxUpdate[] = [
         {
             onyxMethod: Onyx.METHOD.MERGE,
-            key: `${ONYXKEYS.COLLECTION.SHARED_NVP_AGENT_PROMPT}${accountID}`,
-            value: {pendingAction: CONST.RED_BRICK_ROAD_PENDING_ACTION.DELETE},
+            key: ONYXKEYS.AGENT_DELETION_TOMBSTONES,
+            value: tombstoneValue,
         },
-    ];
-
-    const successData: AnyOnyxUpdate[] = [
         {
             onyxMethod: Onyx.METHOD.SET,
-            key: `${ONYXKEYS.COLLECTION.SHARED_NVP_AGENT_PROMPT}${accountID}`,
+            key: promptKey,
             value: null,
         },
         {
             onyxMethod: Onyx.METHOD.MERGE,
             key: ONYXKEYS.PERSONAL_DETAILS_LIST,
-            value: {[accountID]: null},
+            value: {[numericAccountID]: null},
         },
     ];
 
-    const failureData: AnyOnyxUpdate[] = [
-        {
-            onyxMethod: Onyx.METHOD.MERGE,
-            key: `${ONYXKEYS.COLLECTION.SHARED_NVP_AGENT_PROMPT}${accountID}`,
-            value: {
-                pendingAction: CONST.RED_BRICK_ROAD_PENDING_ACTION.DELETE,
-                errors: getMicroSecondOnyxErrorWithTranslationKey('common.genericErrorMessage'),
-            },
-        },
-    ];
+    if (shouldDeleteLocally) {
+        Onyx.merge(ONYXKEYS.AGENT_DELETION_TOMBSTONES, tombstoneValue);
+        clearAgentError(numericAccountID);
+        Navigation.goBack(ROUTES.SETTINGS_AGENTS);
+        return;
+    }
 
-    // Mark the agent's row pending-delete on every policy it belongs to so workflow cards render
-    // the agent's approver row with strikethrough/RBR while DELETE_AGENT is in flight.
+    const optimisticData: AnyOnyxUpdate[] = [...keepAgentDeletedData];
+
+    const successData: AnyOnyxUpdate[] = [...keepAgentDeletedData];
+
+    const failureData: AnyOnyxUpdate[] = [];
+    const finallyData: AnyOnyxUpdate[] = [...keepAgentDeletedData];
+
+    // Remove the agent from every policy it belongs to so workflow cards stay in sync while
+    // DELETE_AGENT is in flight.
     if (agentLogin && allPolicies) {
         for (const policy of Object.values(allPolicies)) {
-            if (!policy?.id || !policy.employeeList?.[agentLogin]) {
+            const existingEmployee = policy?.employeeList?.[agentLogin];
+            if (!policy?.id || !existingEmployee) {
                 continue;
             }
             const policyKey = `${ONYXKEYS.COLLECTION.POLICY}${policy.id}` as const;
-            const optimisticEmployees: OnyxCollectionInputValue<PolicyEmployee> = {
-                [agentLogin]: {pendingAction: CONST.RED_BRICK_ROAD_PENDING_ACTION.DELETE},
-            };
+            const optimisticEmployees: OnyxCollectionInputValue<PolicyEmployee> = {[agentLogin]: null};
             const successEmployees: OnyxCollectionInputValue<PolicyEmployee> = {[agentLogin]: null};
             const failureEmployees: OnyxCollectionInputValue<PolicyEmployee> = {
                 [agentLogin]: {
-                    pendingAction: CONST.RED_BRICK_ROAD_PENDING_ACTION.DELETE,
+                    ...existingEmployee,
+                    pendingAction: null,
                     errors: getMicroSecondOnyxErrorWithTranslationKey('common.genericErrorMessage'),
                 },
             };
@@ -320,9 +342,11 @@ function deleteAgent(accountID: number, agentLogin?: string, allPolicies?: OnyxC
         }
     }
 
-    write(WRITE_COMMANDS.DELETE_AGENT, {agentAccountID: accountID}, {optimisticData, successData, failureData});
+    write(WRITE_COMMANDS.DELETE_AGENT, {agentAccountID: numericAccountID}, {optimisticData, successData, failureData, finallyData});
     Navigation.goBack(ROUTES.SETTINGS_AGENTS);
 }
+
+initAgentDeletionGuard();
 
 export {
     openAgentsPage,
@@ -338,4 +362,5 @@ export {
     updateAgentPrompt,
     updateAgentAvatar,
     deleteAgent,
+    purgeResurrectedDeletedAgents,
 };

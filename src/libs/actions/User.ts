@@ -7,6 +7,7 @@ import type {OnyxKey} from 'react-native-onyx/dist/types';
 import type {ValueOf} from 'type-fest';
 import type {LocaleContextProps} from '@components/LocaleContextProvider';
 import * as ActiveClientManager from '@libs/ActiveClientManager';
+import {recordAgentDeletionsFromOnyxUpdates} from '@libs/AgentUtils';
 import * as API from '@libs/API';
 import type {
     AddNewContactMethodParams,
@@ -991,6 +992,7 @@ function subscribeToUserEvents(currentUserAccountID: number, currentUserEmail: s
                 return;
             }
 
+            recordAgentDeletionsFromOnyxUpdates(pushJSON);
             const onyxUpdatePromise = Onyx.update(pushJSON).then(() => {
                 triggerNotifications(pushJSON, currentUserAccountID, currentUserEmail, getReportAttributes?.());
             });

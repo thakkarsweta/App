@@ -1,4 +1,5 @@
-import React, {useEffect} from 'react';
+import {useFocusEffect} from '@react-navigation/native';
+import React, {useCallback, useEffect, useMemo} from 'react';
 import {FlatList, View} from 'react-native';
 import Button from '@components/Button';
 import GenericEmptyStateComponent from '@components/EmptyStateComponent/GenericEmptyStateComponent';
@@ -16,23 +17,16 @@ import usePermissions from '@hooks/usePermissions';
 import useResponsiveLayout from '@hooks/useResponsiveLayout';
 import useSwitchToDelegator from '@hooks/useSwitchToDelegator';
 import useThemeStyles from '@hooks/useThemeStyles';
+import {buildAgentListItems} from '@libs/AgentUtils';
+import type {AgentListItem} from '@libs/AgentUtils';
 import Navigation from '@libs/Navigation/Navigation';
 import NotFoundPage from '@pages/ErrorPage/NotFoundPage';
-import {clearAgentDeleteError, clearAgentError, clearAgentUpdateError, openAgentsPage} from '@userActions/Agent';
+import {clearAgentDeleteError, clearAgentError, clearAgentUpdateError, openAgentsPage, purgeResurrectedDeletedAgents} from '@userActions/Agent';
 import CONST from '@src/CONST';
 import ONYXKEYS from '@src/ONYXKEYS';
 import ROUTES from '@src/ROUTES';
 import type {Errors, PendingAction} from '@src/types/onyx/OnyxCommon';
 import AgentsListRow from './AgentsListRow';
-
-type AgentItem = {
-    accountID: number;
-    displayName: string;
-    login: string;
-    pendingAction?: PendingAction | null;
-    errors?: Errors | null;
-    hasUpdateErrors: boolean;
-};
 
 function AgentsPage() {
     const {translate} = useLocalize();
@@ -47,35 +41,23 @@ function AgentsPage() {
     useDocumentTitle(translate('agentsPage.title'));
 
     const [agentPrompts] = useOnyx(ONYXKEYS.COLLECTION.SHARED_NVP_AGENT_PROMPT);
+    const [deletionTombstones] = useOnyx(ONYXKEYS.AGENT_DELETION_TOMBSTONES);
     const personalDetailsList = usePersonalDetails();
 
-    useEffect(() => {
-        if (!isCustomAgentEnabled) {
-            return;
-        }
-        openAgentsPage();
-    }, [isCustomAgentEnabled]);
-
-    const agentItems: AgentItem[] = Object.entries(agentPrompts ?? {})
-        .map(([key, agentPrompt]) => {
-            const accountID = Number(key.slice(ONYXKEYS.COLLECTION.SHARED_NVP_AGENT_PROMPT.length));
-            const details = personalDetailsList?.[accountID];
-            if (!details) {
-                return null;
+    useFocusEffect(
+        useCallback(() => {
+            if (!isCustomAgentEnabled) {
+                return;
             }
-            const hasNameErrors = Object.keys(agentPrompt?.nameErrors ?? {}).length > 0;
-            const hasPromptErrors = Object.keys(agentPrompt?.promptErrors ?? {}).length > 0;
-            const hasAvatarErrors = Object.keys(agentPrompt?.avatarErrors ?? {}).length > 0;
-            return {
-                accountID,
-                displayName: details.displayName ?? details.login ?? '',
-                login: details.login ?? '',
-                pendingAction: agentPrompt?.pendingAction,
-                errors: agentPrompt?.errors,
-                hasUpdateErrors: hasNameErrors || hasPromptErrors || hasAvatarErrors,
-            };
-        })
-        .filter(Boolean) as AgentItem[];
+            openAgentsPage();
+        }, [isCustomAgentEnabled]),
+    );
+
+    useEffect(() => {
+        purgeResurrectedDeletedAgents(agentPrompts, personalDetailsList, deletionTombstones);
+    }, [agentPrompts, personalDetailsList, deletionTombstones]);
+
+    const agentItems = useMemo(() => buildAgentListItems(agentPrompts, personalDetailsList, deletionTombstones), [agentPrompts, personalDetailsList, deletionTombstones]);
 
     const handleErrorClose = (pendingAction: PendingAction | null | undefined, accountID: number) => {
         if (pendingAction === CONST.RED_BRICK_ROAD_PENDING_ACTION.ADD) {
@@ -90,7 +72,7 @@ function AgentsPage() {
     const shouldShowErrors = (pendingAction: PendingAction | null | undefined) =>
         pendingAction === CONST.RED_BRICK_ROAD_PENDING_ACTION.ADD || pendingAction === CONST.RED_BRICK_ROAD_PENDING_ACTION.DELETE;
 
-    const renderItem = ({item}: {item: AgentItem}) => (
+    const renderItem = ({item}: {item: AgentListItem}) => (
         <AgentsListRow
             accountID={item.accountID}
             displayName={item.displayName}
@@ -104,7 +86,7 @@ function AgentsPage() {
         />
     );
 
-    const keyExtractor = (item: AgentItem) => String(item.accountID);
+    const keyExtractor = (item: AgentListItem) => String(item.accountID);
 
     const hasAgents = agentItems.length > 0;
 

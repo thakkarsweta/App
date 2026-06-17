@@ -81,6 +81,13 @@ const ONYXKEYS = {
     /** Contains all the personalDetails the user has access to, keyed by accountID */
     PERSONAL_DETAILS_LIST: 'personalDetailsList',
 
+    /**
+     * Tombstones for agents the user deleted. Prevents OpenAgentsPage from resurrecting agents that were
+     * removed optimistically while DELETE_AGENT is in flight or after a successful delete.
+     * Keys are `accountID:<id>` and optionally `login:<email>`.
+     */
+    AGENT_DELETION_TOMBSTONES: 'agentDeletionTombstones',
+
     /** Contains all the private personal details of the user */
     PRIVATE_PERSONAL_DETAILS: 'private_personalDetails',
 
@@ -1459,6 +1466,7 @@ type OnyxValuesMapping = {
     [ONYXKEYS.STATUS_DRAFT_CUSTOM_CLEAR_AFTER_DATE]: string;
     [ONYXKEYS.INPUT_FOCUSED]: boolean;
     [ONYXKEYS.PERSONAL_DETAILS_LIST]: OnyxTypes.PersonalDetailsList;
+    [ONYXKEYS.AGENT_DELETION_TOMBSTONES]: Record<string, boolean>;
     [ONYXKEYS.PRIVATE_PERSONAL_DETAILS]: OnyxTypes.PrivatePersonalDetails;
     [ONYXKEYS.PERSONAL_DETAILS_METADATA]: Record<string, OnyxTypes.PersonalDetailsMetadata>;
     [ONYXKEYS.TASK]: OnyxTypes.Task;

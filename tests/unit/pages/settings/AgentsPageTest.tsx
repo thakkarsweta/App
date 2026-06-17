@@ -9,6 +9,7 @@ import ONYXKEYS from '@src/ONYXKEYS';
 
 jest.mock('@userActions/Agent', () => ({
     openAgentsPage: jest.fn(),
+    purgeResurrectedDeletedAgents: jest.fn(),
 }));
 
 jest.mock('@hooks/usePermissions', () => jest.fn(() => ({isBetaEnabled: () => true})));
@@ -61,6 +62,7 @@ jest.mock('@react-navigation/native', () => {
     return {
         ...actual,
         useIsFocused: () => true,
+        useFocusEffect: (callback: () => void) => callback(),
         useRoute: jest.fn(() => ({name: '', key: '', params: {}})),
     };
 });
@@ -145,7 +147,7 @@ describe('AgentsPage', () => {
         expect(JSON.stringify(toJSON())).toContain('NotFoundPage');
     });
 
-    it('calls openAgentsPage on mount', () => {
+    it('calls openAgentsPage when the screen is focused', () => {
         render(<AgentsPage />);
 
         expect(mockOpenAgentsPage).toHaveBeenCalledTimes(1);
