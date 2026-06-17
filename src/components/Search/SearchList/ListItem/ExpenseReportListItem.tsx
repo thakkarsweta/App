@@ -195,7 +195,7 @@ function ExpenseReportListItem<TItem extends ListItem>({
             );
             return violations.some((violation) => violation.name === CONST.VIOLATIONS.MISSING_CATEGORY);
         });
-    }, [reportItem, policyForViolations, reportForViolations, currentUserDetails]);
+    }, [reportItem, policyForViolations, reportForViolations, currentUserDetails.email, currentUserDetails.accountID]);
 
     const {isDelegateAccessRestricted} = useDelegateNoAccessState();
     const {showDelegateNoAccessModal} = useDelegateNoAccessActions();
