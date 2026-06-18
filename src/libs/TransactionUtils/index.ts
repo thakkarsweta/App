@@ -13,7 +13,7 @@ import type {UnreportedExpenseListItemType} from '@components/Search/SearchList/
 import type {TransactionWithOptionalSearchFields} from '@components/TransactionItemRow/types';
 import type {MergeDuplicatesParams} from '@libs/API/parameters';
 import {convertAttendeesToArray, normalizeAttendees} from '@libs/AttendeeUtils';
-import {getCategoryDefaultTaxRate, isCategoryMissing} from '@libs/CategoryUtils';
+import {getCategoryDefaultTaxRate, isCategoryMissing, syncMissingCategoryViolation} from '@libs/CategoryUtils';
 import {convertToBackendAmount, getCurrencyDecimals, getCurrencySymbol} from '@libs/CurrencyUtils';
 import DateUtils from '@libs/DateUtils';
 import DistanceRequestUtils from '@libs/DistanceRequestUtils';
@@ -1651,13 +1651,16 @@ function getVisibleTransactionViolations(
     policy: OnyxEntry<Policy>,
     shouldShowRterForSettledReport = true,
 ): TransactionViolations {
-    return mergeProhibitedViolations(
-        transactionViolations.filter(
-            (violation) =>
-                !isViolationDismissed(transaction, violation, currentUserEmail, currentUserAccountID, iouReport, policy) &&
-                shouldShowViolation(iouReport, policy, violation.name, currentUserEmail, shouldShowRterForSettledReport, transaction),
-        ),
+    const filteredViolations = transactionViolations.filter(
+        (violation) =>
+            !isViolationDismissed(transaction, violation, currentUserEmail, currentUserAccountID, iouReport, policy) &&
+            shouldShowViolation(iouReport, policy, violation.name, currentUserEmail, shouldShowRterForSettledReport, transaction),
     );
+
+    const mergedViolations = mergeProhibitedViolations(filteredViolations);
+    const isInvoice = isInvoiceReport(iouReport) || iouReport?.type === CONST.REPORT.TYPE.INVOICE;
+
+    return syncMissingCategoryViolation(mergedViolations, policy, getCategory(transaction), isSelfDM(iouReport), isInvoice, isCategoryBeingAnalyzed(transaction));
 }
 
 /**

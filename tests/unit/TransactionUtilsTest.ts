@@ -1207,6 +1207,39 @@ describe('TransactionUtils', () => {
         });
     });
 
+    describe('getVisibleTransactionViolations', () => {
+        it('should add missingCategory violation when category is required and missing', () => {
+            const transaction = generateTransaction({category: '', pendingAction: null});
+            const policy = {...createRandomPolicy(0, CONST.POLICY.TYPE.CORPORATE), requiresCategory: true} as Policy;
+
+            const result = TransactionUtils.getVisibleTransactionViolations(transaction, [], CURRENT_USER_EMAIL, CURRENT_USER_ID, openReport, policy);
+
+            expect(result).toEqual([
+                {
+                    name: CONST.VIOLATIONS.MISSING_CATEGORY,
+                    type: CONST.VIOLATION_TYPES.VIOLATION,
+                    showInReview: true,
+                },
+            ]);
+        });
+
+        it('should remove stale missingCategory violation when requiresCategory is turned off', () => {
+            const transaction = generateTransaction({category: '', pendingAction: null});
+            const policy = {...createRandomPolicy(0, CONST.POLICY.TYPE.CORPORATE), requiresCategory: false} as Policy;
+            const transactionViolations: TransactionViolation[] = [
+                {
+                    name: CONST.VIOLATIONS.MISSING_CATEGORY,
+                    type: CONST.VIOLATION_TYPES.VIOLATION,
+                    showInReview: true,
+                },
+            ];
+
+            const result = TransactionUtils.getVisibleTransactionViolations(transaction, transactionViolations, CURRENT_USER_EMAIL, CURRENT_USER_ID, openReport, policy);
+
+            expect(result).toEqual([]);
+        });
+    });
+
     describe('shouldShowViolation', () => {
         it('should return false for auto approval limit violation when report is not open/processing report', () => {
             const iouReport: Report = {
