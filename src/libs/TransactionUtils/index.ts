@@ -14,7 +14,7 @@ import type {TransactionWithOptionalSearchFields} from '@components/TransactionI
 import type {MergeDuplicatesParams} from '@libs/API/parameters';
 import {convertAttendeesToArray, normalizeAttendees} from '@libs/AttendeeUtils';
 import {getCategoryDefaultTaxRate, isCategoryMissing} from '@libs/CategoryUtils';
-import {convertToBackendAmount, getCurrencyDecimals, getCurrencySymbol} from '@libs/CurrencyUtils';
+import {convertToBackendAmount, getCurrencyCodeForExpenseDate, getCurrencyDecimals, getCurrencySymbol} from '@libs/CurrencyUtils';
 import DateUtils from '@libs/DateUtils';
 import DistanceRequestUtils from '@libs/DistanceRequestUtils';
 import {toLocaleDigit} from '@libs/LocaleDigitUtils';
@@ -976,12 +976,18 @@ function getFormattedPostedDate(transaction: OnyxInputOrEntry<Transaction>, date
 /**
  * Return the currency field from the transaction, return the modifiedCurrency if present.
  */
-function getCurrency(transaction: OnyxInputOrEntry<Pick<Transaction, 'modifiedCurrency' | 'currency'>>): string {
-    const currency = transaction?.modifiedCurrency ?? '';
-    if (currency) {
-        return currency;
+function getCurrency(transaction: OnyxInputOrEntry<Pick<Transaction, 'modifiedCurrency' | 'currency' | 'created'>>): string {
+    const modifiedCurrency = transaction?.modifiedCurrency ?? '';
+    if (modifiedCurrency) {
+        return modifiedCurrency;
     }
-    return transaction?.currency ?? CONST.CURRENCY.USD;
+
+    const storedCurrency = transaction?.currency ?? CONST.CURRENCY.USD;
+    if (storedCurrency === 'VEF' && transaction?.created && getCurrencyCodeForExpenseDate('VES', transaction.created) === 'VEF') {
+        return 'VES';
+    }
+
+    return storedCurrency;
 }
 
 /**

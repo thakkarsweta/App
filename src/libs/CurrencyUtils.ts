@@ -213,6 +213,23 @@ function convertAmountToDisplayString(amount = 0, currency: string = CONST.CURRE
 }
 
 /**
+ * Returns the currency code the backend should use for FX lookup on `expenseDate`.
+ * VES did not exist before 2018; pre-redenomination expenses must use VEF for historical rates.
+ */
+function getCurrencyCodeForExpenseDate(currencyCode: string, expenseDate?: string): string {
+    if (currencyCode !== 'VES' || !expenseDate) {
+        return currencyCode;
+    }
+
+    const vefRetirementDate = currencyList?.VEF?.retirementDate;
+    if (!vefRetirementDate) {
+        return currencyCode;
+    }
+
+    return expenseDate < vefRetirementDate ? 'VEF' : currencyCode;
+}
+
+/**
  * Acts the same as `convertAmountToDisplayString` but the result string does not contain currency
  */
 function convertToDisplayStringWithoutCurrency(amountInCents: number, currency: string = CONST.CURRENCY.USD) {
@@ -239,6 +256,7 @@ export {
     isValidCurrencyCode,
     sanitizeCurrencyCode,
     resetInvalidCurrencyWarningsForTesting,
+    getCurrencyCodeForExpenseDate,
     getCurrencyDecimals,
     getCurrencyUnit,
     getLocalizedCurrencySymbol,

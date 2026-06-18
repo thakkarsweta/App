@@ -12,6 +12,7 @@ import type {
     TrackExpenseParams,
 } from '@libs/API/parameters';
 import {WRITE_COMMANDS} from '@libs/API/types';
+import {getCurrencyCodeForExpenseDate} from '@libs/CurrencyUtils';
 import DateUtils from '@libs/DateUtils';
 import {deferOrExecuteWrite} from '@libs/deferredLayoutWrite';
 import DistanceRequestUtils from '@libs/DistanceRequestUtils';
@@ -1653,6 +1654,8 @@ function requestMoney(requestMoneyInformation: RequestMoneyInformation): {iouRep
         isFromGlobalCreate = false,
     } = transactionParams;
 
+    const rateLookupCurrency = getCurrencyCodeForExpenseDate(currency, created);
+
     const testDriveCommentReportActionID = isTestDrive ? NumberUtils.rand64() : undefined;
 
     const sanitizedWaypoints = waypoints ? stringifyWaypointsForAPI(waypoints) : undefined;
@@ -1836,7 +1839,7 @@ function requestMoney(requestMoneyInformation: RequestMoneyInformation): {iouRep
                 debtorEmail: payerEmail,
                 debtorAccountID: payerAccountID,
                 amount,
-                currency,
+                currency: rateLookupCurrency,
                 comment,
                 created,
                 merchant,
