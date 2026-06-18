@@ -1277,4 +1277,130 @@ describe('CategoryOptionListUtils', () => {
             {name: 'Normal:Category', enabled: true, pendingAction: undefined},
         ]);
     });
+
+    it('should hide the parent category selection button in the selected section when a child category is selected', () => {
+        const categories: PolicyCategories = {
+            Parent: {
+                enabled: true,
+                name: 'Parent',
+                unencodedName: 'Parent',
+                areCommentsRequired: false,
+                'GL Code': '',
+                externalID: '',
+                origin: '',
+            },
+            'Parent: Child': {
+                enabled: true,
+                name: 'Parent: Child',
+                unencodedName: 'Parent: Child',
+                areCommentsRequired: false,
+                'GL Code': '',
+                externalID: '',
+                origin: '',
+            },
+            ...Object.fromEntries(
+                Array.from({length: 12}, (_, index) => [
+                    `Category ${index}`,
+                    {
+                        enabled: true,
+                        name: `Category ${index}`,
+                        unencodedName: `Category ${index}`,
+                        areCommentsRequired: false,
+                        'GL Code': '',
+                        externalID: '',
+                        origin: '',
+                    },
+                ]),
+            ),
+        };
+
+        const sections = getCategoryListSections({
+            searchValue: '',
+            categories,
+            selectedOptions: [{name: 'Parent: Child', enabled: true}],
+            localeCompare,
+            translate: translateLocal,
+        });
+
+        const selectedSection = sections.find((section) => section.sectionIndex === 1);
+        expect(selectedSection?.data).toEqual([
+            expect.objectContaining({
+                text: 'Parent',
+                keyForList: 'Parent',
+                searchText: 'Parent',
+                isDisabled: true,
+                isSelected: false,
+                shouldHideSelectionButton: true,
+            }),
+            expect.objectContaining({
+                text: '    Child',
+                keyForList: 'Parent: Child',
+                searchText: 'Parent: Child',
+                isDisabled: false,
+                isSelected: true,
+            }),
+        ]);
+    });
+
+    it('should hide the parent category selection button in recent categories when only the child category was recently used', () => {
+        const categories: PolicyCategories = {
+            Parent: {
+                enabled: true,
+                name: 'Parent',
+                unencodedName: 'Parent',
+                areCommentsRequired: false,
+                'GL Code': '',
+                externalID: '',
+                origin: '',
+            },
+            'Parent: Child': {
+                enabled: true,
+                name: 'Parent: Child',
+                unencodedName: 'Parent: Child',
+                areCommentsRequired: false,
+                'GL Code': '',
+                externalID: '',
+                origin: '',
+            },
+            ...Object.fromEntries(
+                Array.from({length: 12}, (_, index) => [
+                    `Category ${index}`,
+                    {
+                        enabled: true,
+                        name: `Category ${index}`,
+                        unencodedName: `Category ${index}`,
+                        areCommentsRequired: false,
+                        'GL Code': '',
+                        externalID: '',
+                        origin: '',
+                    },
+                ]),
+            ),
+        };
+
+        const sections = getCategoryListSections({
+            searchValue: '',
+            categories,
+            recentlyUsedCategories: ['Parent: Child'],
+            localeCompare,
+            translate: translateLocal,
+        });
+
+        const recentSection = sections.find((section) => section.title === 'Recent');
+        expect(recentSection?.data).toEqual([
+            expect.objectContaining({
+                text: 'Parent',
+                keyForList: 'Parent',
+                searchText: 'Parent',
+                isDisabled: true,
+                shouldHideSelectionButton: true,
+            }),
+            expect.objectContaining({
+                text: '    Child',
+                keyForList: 'Parent: Child',
+                searchText: 'Parent: Child',
+                isDisabled: false,
+            }),
+        ]);
+    });
 });

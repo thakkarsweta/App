@@ -55,6 +55,9 @@ type ListItem<K extends string | number = string> = {
     /** Whether the checkbox should be disabled */
     isDisabledCheckbox?: boolean;
 
+    /** Whether the selection button (checkbox/radio) should be hidden entirely */
+    shouldHideSelectionButton?: boolean;
+
     /** Whether this option is disabled for selection */
     isDisabled?: boolean | null;
 

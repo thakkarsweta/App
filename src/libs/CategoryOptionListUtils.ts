@@ -30,7 +30,7 @@ type Hierarchy = Record<string, Category & {[key: string]: Hierarchy & Category}
  * @param options[].enabled - a flag to enable/disable option in a list
  * @param options[].name - a name of an option
  */
-function getCategoryOptionTree(options: Record<string, Category> | Category[], selectedOptions: Category[] = []): OptionTree[] {
+function getCategoryOptionTree(options: Record<string, Category> | Category[], selectedOptions: Category[] = [], directlyIncludedCategories?: Set<string>): OptionTree[] {
     const optionCollection = new Map<string, OptionTree>();
     for (const option of Object.values(options)) {
         const array = processCategoryNameSegments(option.name);
@@ -49,8 +49,9 @@ function getCategoryOptionTree(options: Record<string, Category> | Category[], s
             const selectedParentOption = !isChild && Object.values(selectedOptions).find((op) => op.name === searchText);
             const optionParent = !isChild && Object.values(options).find((op) => op.name === searchText);
             const parentOption = selectedParentOption ?? optionParent;
+            const isStructuralParent = !isChild && !!directlyIncludedCategories && !directlyIncludedCategories.has(searchText);
 
-            const isParentOptionDisabled = !parentOption || !parentOption.enabled || parentOption.pendingAction === CONST.RED_BRICK_ROAD_PENDING_ACTION.DELETE;
+            const isParentOptionDisabled = isStructuralParent || !parentOption || !parentOption.enabled || parentOption.pendingAction === CONST.RED_BRICK_ROAD_PENDING_ACTION.DELETE;
 
             if (optionCollection.has(searchText)) {
                 continue;
@@ -66,6 +67,7 @@ function getCategoryOptionTree(options: Record<string, Category> | Category[], s
                 isDisabled: isChild ? !option.enabled || option.pendingAction === CONST.RED_BRICK_ROAD_PENDING_ACTION.DELETE : isParentOptionDisabled,
                 isSelected: isChild ? !!option.isSelected : !!selectedParentOption,
                 pendingAction: option.pendingAction,
+                ...(isStructuralParent ? {shouldHideSelectionButton: true} : {}),
             });
         }
     }
@@ -110,7 +112,8 @@ function getCategoryListSections({
     }
 
     if (numberOfEnabledCategories === 0 && selectedOptions.length > 0) {
-        const data = getCategoryOptionTree(selectedOptionsWithDisabledState);
+        const selectedCategoryNames = new Set(selectedOptionsWithDisabledState.map((category) => category.name));
+        const data = getCategoryOptionTree(selectedOptionsWithDisabledState, selectedOptionsWithDisabledState, selectedCategoryNames);
         categorySections.push({
             // "Selected" section
             title: '',
@@ -169,7 +172,8 @@ function getCategoryListSections({
     }
 
     if (selectedOptions.length > 0) {
-        const data = getCategoryOptionTree(selectedOptionsWithDisabledState);
+        const selectedCategoryNames = new Set(selectedOptionsWithDisabledState.map((category) => category.name));
+        const data = getCategoryOptionTree(selectedOptionsWithDisabledState, selectedOptionsWithDisabledState, selectedCategoryNames);
         categorySections.push({
             // "Selected" section
             title: '',
@@ -205,8 +209,9 @@ function getCategoryListSections({
 
     if (filteredRecentlyUsedCategories.length > 0) {
         const cutRecentlyUsedCategories = filteredRecentlyUsedCategories.slice(0, maxRecentReportsToShow);
+        const recentCategoryNames = new Set(cutRecentlyUsedCategories.map((category) => category.name));
 
-        const data = getCategoryOptionTree(cutRecentlyUsedCategories);
+        const data = getCategoryOptionTree(cutRecentlyUsedCategories, [], recentCategoryNames);
         categorySections.push({
             // "Recent" section
             title: translate('common.recent'),
