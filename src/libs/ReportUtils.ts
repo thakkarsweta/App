@@ -13053,9 +13053,18 @@ function isWorkspaceMemberLeavingWorkspaceRoom(report: OnyxEntry<Report>, isPoli
 }
 
 function shouldHideSingleReportField(reportField: PolicyReportField) {
+    const fieldValue = reportField.value ?? reportField.defaultValue;
     const hasEnableOption = reportField.type !== CONST.REPORT_FIELD_TYPES.LIST || reportField.disabledOptions.some((option) => !option);
 
-    return isReportFieldOfTypeTitle(reportField) || !hasEnableOption;
+    return isReportFieldOfTypeTitle(reportField) || (!hasEnableOption && !fieldValue);
+}
+
+/**
+ * Whether a report has at least one non-title report field that should be shown to the user.
+ * Used to keep custom report fields visible in combined (single-expense) views even when they become read-only.
+ */
+function hasDisplayableNonTitleReportFields(reportFields: PolicyReportField[]): boolean {
+    return reportFields.some((reportField) => !shouldHideSingleReportField(reportField) && !isReportFieldOfTypeTitle(reportField));
 }
 
 /**
@@ -13547,6 +13556,7 @@ export {
     isWorkspaceChat,
     isOneTransactionReport,
     isTrackExpenseReportNew,
+    hasDisplayableNonTitleReportFields,
     shouldHideSingleReportField,
     getBillableAndTaxTotal,
     getReportForHeader,

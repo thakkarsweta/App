@@ -31,13 +31,12 @@ import {
     getMoneyRequestSpendBreakdown,
     getReportFieldKey,
     getReportFieldMaps,
+    hasDisplayableNonTitleReportFields,
     hasUpdatedTotal,
     isClosedExpenseReportWithNoExpenses as isClosedExpenseReportWithNoExpensesReportUtils,
     isGroupPolicyExpenseReport as isGroupPolicyExpenseReportUtils,
     isInvoiceReport as isInvoiceReportUtils,
-    isReportFieldDisabled,
     isReportFieldDisabledForUser,
-    isReportFieldOfTypeTitle,
     isSettled as isSettledReportUtils,
     shouldHideSingleReportField,
 } from '@libs/ReportUtils';
@@ -147,10 +146,7 @@ function MoneyReportView({
         return {sortedPolicyReportFields: sorted, fieldValues: values, fieldsByName: byName};
     }, [policy?.fieldList, report]);
 
-    const enabledReportFields = sortedPolicyReportFields.filter(
-        (reportField) => !isReportFieldDisabled(report, reportField, policy) || reportField.type === CONST.REPORT_FIELD_TYPES.FORMULA,
-    );
-    const isOnlyTitleFieldEnabled = enabledReportFields.length === 1 && isReportFieldOfTypeTitle(enabledReportFields.at(0));
+    const hasNonTitleReportFields = hasDisplayableNonTitleReportFields(sortedPolicyReportFields);
     const isClosedExpenseReportWithNoExpenses = isClosedExpenseReportWithNoExpensesReportUtils(report);
     const isGroupPolicyExpenseReport = isGroupPolicyExpenseReportUtils(report);
     const isInvoiceReport = isInvoiceReportUtils(report);
@@ -159,7 +155,7 @@ function MoneyReportView({
         !isClosedExpenseReportWithNoExpenses &&
         (isGroupPolicyExpenseReport || isInvoiceReport) &&
         !!policy?.areReportFieldsEnabled &&
-        (!isCombinedReport || !isOnlyTitleFieldEnabled) &&
+        (!isCombinedReport || hasNonTitleReportFields) &&
         !sortedPolicyReportFields.every(shouldHideSingleReportField);
 
     const hasPendingAction = transactions.some(getTransactionPendingAction);
@@ -189,7 +185,7 @@ function MoneyReportView({
                     <>
                         {(isGroupPolicyExpenseReport || isInvoiceReport) &&
                             !!policy?.areReportFieldsEnabled &&
-                            (!isCombinedReport || !isOnlyTitleFieldEnabled) &&
+                            (!isCombinedReport || hasNonTitleReportFields) &&
                             sortedPolicyReportFields.map((reportField) => {
                                 if (shouldHideSingleReportField(reportField)) {
                                     return null;
