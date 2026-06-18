@@ -91,6 +91,10 @@ function deriveSelectedReports(
     return [];
 }
 
+function hasSelectedTransactionsInMap(transactionIDs: SelectedTransactions): boolean {
+    return Object.values(transactionIDs).some((transaction) => transaction?.isSelected);
+}
+
 function SearchSelectionProvider({children}: SearchSelectionProviderProps) {
     const {currentSearchHash} = useSearchQueryContext();
 
@@ -121,12 +125,14 @@ function SearchSelectionProvider({children}: SearchSelectionProviderProps) {
         // When the caller provides `data`, derive `selectedReports` in the same commit so the
         // two state slices can't diverge for a render. Used by callers (e.g. the refresh-selection
         // effect) that already have `filteredData` in scope and react to it changing.
+        const shouldTurnOffSelectionMode = !hasSelectedTransactionsInMap(transactionIDs);
+
         if (data) {
             setSelectionState((prevState) => ({
                 ...prevState,
                 selectedTransactions: transactionIDs,
                 selectedReports: deriveSelectedReports(transactionIDs, data),
-                shouldTurnOffSelectionMode: false,
+                shouldTurnOffSelectionMode,
             }));
             return;
         }
@@ -134,7 +140,7 @@ function SearchSelectionProvider({children}: SearchSelectionProviderProps) {
         setSelectionState((prevState) => ({
             ...prevState,
             selectedTransactions: transactionIDs,
-            shouldTurnOffSelectionMode: false,
+            shouldTurnOffSelectionMode,
         }));
     };
 
