@@ -62,7 +62,7 @@ function EditReportFieldDatePage({fieldName, isRequired, onSubmit, fieldValue, f
                     role={CONST.ROLE.PRESENTATION}
                     maxDate={CONST.CALENDAR_PICKER.MAX_DATE}
                     minDate={CONST.CALENDAR_PICKER.MIN_DATE}
-                    autoFocus
+                    shouldOpenOnMount
                 />
             </View>
         </FormProvider>

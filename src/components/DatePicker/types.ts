@@ -59,6 +59,14 @@ type DateInputWithPickerProps = DatePickerBaseProps &
          * @default false
          */
         shouldDeferShowUntilPositioned?: boolean;
+
+        /**
+         * Whether to render the calendar inline when the component mounts.
+         * Use on dedicated date selection screens where the calendar should be visible immediately
+         * without a popover modal that can intercept back navigation.
+         * @default false
+         */
+        shouldOpenOnMount?: boolean;
     };
 
 type DatePickerProps = {

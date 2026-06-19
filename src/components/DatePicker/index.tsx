@@ -14,6 +14,7 @@ import useWindowDimensions from '@hooks/useWindowDimensions';
 import {isNumeric} from '@libs/ValidationUtils';
 import {setDraftValues} from '@userActions/FormActions';
 import CONST from '@src/CONST';
+import CalendarPicker from './CalendarPicker';
 import DatePickerModal from './DatePickerModal';
 import type {DateInputWithPickerProps} from './types';
 
@@ -38,6 +39,7 @@ function DatePicker({
     autoComplete = 'off',
     forwardedFSClass,
     shouldDeferShowUntilPositioned = false,
+    shouldOpenOnMount = false,
 }: DateInputWithPickerProps) {
     const icons = useMemoizedLazyExpensifyIcons(['Calendar']);
     const styles = useThemeStyles();
@@ -45,8 +47,9 @@ function DatePicker({
     const {translate} = useLocalize();
 
     const [isModalVisible, setIsModalVisible] = useState(false);
+    const isCalendarExpanded = shouldOpenOnMount || isModalVisible;
     const announcementMessage = label ? `${label}, ${translate('common.calendarOpened')}` : translate('common.calendarOpened');
-    useAccessibilityAnnouncement(announcementMessage, isModalVisible, {shouldAnnounceOnNative: true, shouldAnnounceOnWeb: true});
+    useAccessibilityAnnouncement(announcementMessage, isCalendarExpanded, {shouldAnnounceOnNative: true, shouldAnnounceOnWeb: true});
     const [selectedDate, setSelectedDate] = useState(() => value ?? defaultValue ?? '');
     const [popoverPosition, setPopoverPosition] = useState({horizontal: 0, vertical: 0});
     const textInputRef = useRef<BaseTextInputRef | null>(null);
@@ -131,7 +134,9 @@ function DatePicker({
         onTouched?.();
         onInputChange?.(newDate);
         setSelectedDate(newDate);
-        closeDatePicker();
+        if (!shouldOpenOnMount) {
+            closeDatePicker();
+        }
     };
 
     const handleClear = () => {
@@ -141,10 +146,14 @@ function DatePicker({
     };
 
     useEffect(() => {
+        if (shouldOpenOnMount) {
+            return;
+        }
+
         InteractionManager.runAfterInteractions(() => {
             calculatePopoverPosition();
         });
-    }, [calculatePopoverPosition, windowWidth]);
+    }, [shouldOpenOnMount, calculatePopoverPosition, windowWidth]);
 
     // Combined ref: updates textInputRef (needed for blur() in showDatePickerModal) and connects
     // autoFocusCallbackRef only when autoFocus=true so useAutoFocusInput's useFocusEffect cleanup
@@ -184,37 +193,47 @@ function DatePicker({
                     label={label}
                     accessibilityLabel={label}
                     role={CONST.ROLE.COMBOBOX}
-                    accessibilityState={{expanded: isModalVisible}}
+                    accessibilityState={{expanded: isCalendarExpanded}}
                     value={selectedDate}
                     placeholder={placeholder ?? translate('common.dateFormat')}
                     errorText={errorText}
                     inputStyle={styles.pointerEventsNone}
                     disabled={disabled}
-                    onPress={() => showDatePickerModal()}
-                    onSubmitEditing={() => showDatePickerModal()}
-                    onKeyPress={handleInputKeyPress}
-                    textInputContainerStyles={isModalVisible ? styles.borderColorFocus : {}}
+                    onPress={shouldOpenOnMount ? undefined : () => showDatePickerModal()}
+                    onSubmitEditing={shouldOpenOnMount ? undefined : () => showDatePickerModal()}
+                    onKeyPress={shouldOpenOnMount ? undefined : handleInputKeyPress}
+                    textInputContainerStyles={isCalendarExpanded ? styles.borderColorFocus : {}}
                     shouldHideClearButton={shouldHideClearButton}
                     onClearInput={handleClear}
                     forwardedFSClass={forwardedFSClass}
                     autoComplete={autoComplete}
                     disableKeyboard
                 />
+                {shouldOpenOnMount && (
+                    <CalendarPicker
+                        minDate={minDate}
+                        maxDate={maxDate}
+                        value={getValidDateForCalendar}
+                        onSelected={handleDateSelected}
+                    />
+                )}
             </View>
 
-            <DatePickerModal
-                inputID={inputID}
-                minDate={minDate}
-                maxDate={maxDate}
-                value={getValidDateForCalendar}
-                onSelected={handleDateSelected}
-                isVisible={isModalVisible}
-                onClose={closeDatePicker}
-                anchorPosition={popoverPosition}
-                shouldPositionFromTop={!isInverted}
-                forwardedFSClass={forwardedFSClass}
-                shouldCloseWhenBrowserNavigationChanged
-            />
+            {!shouldOpenOnMount && (
+                <DatePickerModal
+                    inputID={inputID}
+                    minDate={minDate}
+                    maxDate={maxDate}
+                    value={getValidDateForCalendar}
+                    onSelected={handleDateSelected}
+                    isVisible={isModalVisible}
+                    onClose={closeDatePicker}
+                    anchorPosition={popoverPosition}
+                    shouldPositionFromTop={!isInverted}
+                    forwardedFSClass={forwardedFSClass}
+                    shouldCloseWhenBrowserNavigationChanged
+                />
+            )}
         </>
     );
 }

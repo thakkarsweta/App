@@ -173,7 +173,7 @@ function IOURequestStepDate({
                     label={translate('common.date')}
                     defaultValue={currentCreated}
                     maxDate={CONST.CALENDAR_PICKER.MAX_DATE}
-                    autoFocus
+                    shouldOpenOnMount
                 />
             </FormProvider>
         </StepScreenWrapper>
