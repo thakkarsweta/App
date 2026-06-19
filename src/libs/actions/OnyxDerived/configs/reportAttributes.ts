@@ -1,6 +1,6 @@
 import type {OnyxCollection, OnyxEntry} from 'react-native-onyx';
 import {getIsOffline} from '@libs/NetworkState';
-import {getIOUReportIDFromReportActionPreview, getLinkedTransactionID} from '@libs/ReportActionsUtils';
+import {getIOUReportIDFromReportActionPreview, getLinkedTransactionID, isOlderReportAction} from '@libs/ReportActionsUtils';
 import {computeReportName} from '@libs/ReportNameUtils';
 import {generateIsEmptyReport, generateReportAttributes, hasVisibleReportFieldViolations, isArchivedReport, isPolicyAdmin, isPolicyExpenseChat, isValidReport} from '@libs/ReportUtils';
 import SidebarUtils from '@libs/SidebarUtils';
@@ -8,7 +8,7 @@ import createOnyxDerivedValueConfig from '@userActions/OnyxDerived/createOnyxDer
 import {hasKeyTriggeredCompute} from '@userActions/OnyxDerived/utils';
 import CONST from '@src/CONST';
 import ONYXKEYS from '@src/ONYXKEYS';
-import type {PersonalDetailsList, Policy, ReportAttributesDerivedValue} from '@src/types/onyx';
+import type {PersonalDetailsList, Policy, ReportAction, ReportAttributesDerivedValue} from '@src/types/onyx';
 
 let previousDisplayNames: Record<string, string | undefined> = {};
 let previousPersonalDetails: OnyxEntry<PersonalDetailsList> | undefined;
@@ -374,7 +374,7 @@ export default createOnyxDerivedValueConfig({
         );
 
         // Propagate errors from IOU reports to their parent chat reports.
-        const chatReportFixTargets = new Map<string, {actionTargetReportActionID: string; created: string}>();
+        const chatReportFixTargets = new Map<string, Array<{reportActionID: string; previewAction: ReportAction}>>();
         for (const report of Object.values(reports)) {
             if (!report?.reportID) {
                 continue;
@@ -395,24 +395,32 @@ export default createOnyxDerivedValueConfig({
             }
 
             const chatReportActions = reportActions?.[`${ONYXKEYS.COLLECTION.REPORT_ACTIONS}${report.chatReportID}`];
-            const reportPreviewAction = Object.values(chatReportActions ?? {}).find((action) => getIOUReportIDFromReportActionPreview(action) === report.reportID);
+            const parentPreviewFromReport = report.parentReportActionID ? chatReportActions?.[report.parentReportActionID] : undefined;
+            const reportPreviewAction =
+                parentPreviewFromReport && getIOUReportIDFromReportActionPreview(parentPreviewFromReport) === report.reportID
+                    ? parentPreviewFromReport
+                    : Object.values(chatReportActions ?? {}).find((action) => getIOUReportIDFromReportActionPreview(action) === report.reportID);
             const actionTargetReportActionID = reportPreviewAction?.reportActionID;
-            if (!actionTargetReportActionID) {
+            if (!actionTargetReportActionID || !reportPreviewAction) {
                 continue;
             }
 
-            const created = reportPreviewAction.created ?? '';
-            const existingTarget = chatReportFixTargets.get(report.chatReportID);
-            if (!existingTarget || created > existingTarget.created) {
-                chatReportFixTargets.set(report.chatReportID, {actionTargetReportActionID, created});
+            const existingTargets = chatReportFixTargets.get(report.chatReportID) ?? [];
+            if (!existingTargets.some((target) => target.reportActionID === actionTargetReportActionID)) {
+                existingTargets.push({reportActionID: actionTargetReportActionID, previewAction: reportPreviewAction});
             }
+            chatReportFixTargets.set(report.chatReportID, existingTargets);
         }
 
         // Apply the error status to the parent chat reports.
-        for (const [chatReportID, {actionTargetReportActionID}] of chatReportFixTargets) {
+        for (const [chatReportID, fixTargets] of chatReportFixTargets) {
             if (!reportAttributes[chatReportID]) {
                 continue;
             }
+
+            const sortedFixTargets = [...fixTargets].sort((a, b) => (isOlderReportAction(a.previewAction, b.previewAction) ? -1 : 1));
+            const actionTargetReportActionIDs = sortedFixTargets.map((target) => target.reportActionID);
+            const actionTargetReportActionID = actionTargetReportActionIDs.at(0);
 
             // Clone the entry before mutating — it may be a reference carried over from
             // currentValue.reports that wasn't recomputed in this incremental run.
@@ -421,6 +429,7 @@ export default createOnyxDerivedValueConfig({
                 brickRoadStatus: CONST.BRICK_ROAD_INDICATOR_STATUS.ERROR,
                 actionBadge: CONST.REPORT.ACTION_BADGE.FIX,
                 actionTargetReportActionID,
+                actionTargetReportActionIDs,
             };
         }
 

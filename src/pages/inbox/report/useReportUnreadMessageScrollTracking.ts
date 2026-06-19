@@ -32,7 +32,38 @@ type Args = {
 
     /** The index of the action badge target report action in the sorted visible actions list (-1 if none) */
     actionBadgeTargetIndex?: number;
+
+    /** Report action IDs for all Fix badge targets in the rendered list (oldest first) */
+    actionBadgeTargetReportActionIDs?: string[];
+
+    /** Indexes in the rendered list corresponding to actionBadgeTargetReportActionIDs */
+    actionBadgeTargetIndexes?: number[];
 };
+
+function isReportActionWithID(item: unknown): item is {reportActionID: string} {
+    return typeof item === 'object' && item !== null && 'reportActionID' in item && typeof (item as {reportActionID?: unknown}).reportActionID === 'string';
+}
+
+function getVisibleReportActionIDs(viewableItems: ViewToken[]): Set<string> {
+    const visibleIDs = new Set<string>();
+    for (const viewableItem of viewableItems) {
+        if (isReportActionWithID(viewableItem.item)) {
+            visibleIDs.add(viewableItem.item.reportActionID);
+        } else if (viewableItem.key && viewableItem.key !== CONST.REPORT.ACTIONS.TYPE.CREATED) {
+            visibleIDs.add(viewableItem.key);
+        }
+    }
+    return visibleIDs;
+}
+
+function getNearestOffscreenAboveTargetIndex(targetIndexes: number[], minIndex: number, maxIndex: number, isInverted: boolean): number {
+    const offscreenAboveIndexes = targetIndexes.filter((targetIndex) => (isInverted ? targetIndex > maxIndex : targetIndex < minIndex));
+    if (offscreenAboveIndexes.length === 0) {
+        return -1;
+    }
+
+    return isInverted ? Math.min(...offscreenAboveIndexes) : Math.max(...offscreenAboveIndexes);
+}
 
 export default function useReportUnreadMessageScrollTracking({
     reportID,
@@ -44,9 +75,12 @@ export default function useReportUnreadMessageScrollTracking({
     isInverted,
     hasOnceLoadedReportActions,
     actionBadgeTargetIndex = -1,
+    actionBadgeTargetReportActionIDs = [],
+    actionBadgeTargetIndexes = [],
 }: Args) {
     const [isFloatingMessageCounterVisible, setIsFloatingMessageCounterVisible] = useState(false);
     const [isActionBadgeAboveViewport, setIsActionBadgeAboveViewport] = useState(false);
+    const [actionBadgeScrollTargetIndex, setActionBadgeScrollTargetIndex] = useState(-1);
     const isFocused = useIsFocused();
     const ref = useRef<{
         previousViewableItems: ViewToken[];
@@ -55,6 +89,8 @@ export default function useReportUnreadMessageScrollTracking({
         isFocused: boolean;
         hasOnceLoadedReportActions: boolean;
         actionBadgeTargetIndex: number;
+        actionBadgeTargetReportActionIDs: string[];
+        actionBadgeTargetIndexes: number[];
     }>({
         reportID,
         unreadMarkerReportActionIndex,
@@ -62,6 +98,8 @@ export default function useReportUnreadMessageScrollTracking({
         isFocused: true,
         hasOnceLoadedReportActions,
         actionBadgeTargetIndex,
+        actionBadgeTargetReportActionIDs,
+        actionBadgeTargetIndexes,
     });
     // We want to save the updated value on ref to use it in onViewableItemsChanged
     // because FlatList requires the callback to be stable and we cannot add a dependency on the useCallback.
@@ -143,16 +181,33 @@ export default function useReportUnreadMessageScrollTracking({
             readNewestAction(ref.current.reportID, ref.current.hasOnceLoadedReportActions);
         }
 
-        // Track whether the action badge target is above the viewport (i.e., not visible and at a higher index in the inverted list)
-        const badgeTargetIndex = ref.current.actionBadgeTargetIndex;
-        if (badgeTargetIndex !== -1) {
-            // In an inverted list, higher indexes are "above" (older messages). The target is above the viewport
-            // when its index is greater than the max visible index.
-            const isAbove = isInverted ? badgeTargetIndex > maxIndex : badgeTargetIndex < minIndex;
-            setIsActionBadgeAboveViewport(isAbove);
-        } else {
-            setIsActionBadgeAboveViewport(false);
-        }
+        const visibleReportActionIDs = getVisibleReportActionIDs(viewableItems);
+        const badgeTargetReportActionIDs = ref.current.actionBadgeTargetReportActionIDs;
+        const badgeTargetIndexes = ref.current.actionBadgeTargetIndexes.length > 0 ? ref.current.actionBadgeTargetIndexes : [ref.current.actionBadgeTargetIndex];
+
+        const offscreenAboveTargetIndexes = badgeTargetIndexes
+            .map((targetIndex, index) => ({
+                targetIndex,
+                targetID: badgeTargetReportActionIDs.at(index),
+            }))
+            .filter(({targetIndex, targetID}) => {
+                if (targetIndex === -1) {
+                    return false;
+                }
+
+                const isOffscreenAbove = isInverted ? targetIndex > maxIndex : targetIndex < minIndex;
+                if (!isOffscreenAbove) {
+                    return false;
+                }
+
+                // Guard against stale viewability snapshots after list inserts: only treat a target as offscreen when its reportActionID is not visible.
+                return !targetID || !visibleReportActionIDs.has(targetID);
+            })
+            .map(({targetIndex}) => targetIndex);
+
+        const isAbove = offscreenAboveTargetIndexes.length > 0;
+        setIsActionBadgeAboveViewport(isAbove);
+        setActionBadgeScrollTargetIndex(isAbove ? getNearestOffscreenAboveTargetIndex(offscreenAboveTargetIndexes, minIndex, maxIndex, isInverted) : -1);
 
         // FlatList requires a stable onViewableItemsChanged callback for optimal performance.
         // Therefore, we use a ref to store values instead of adding them as dependencies.
@@ -169,16 +224,19 @@ export default function useReportUnreadMessageScrollTracking({
         }
     }, [onViewableItemsChanged, unreadMarkerReportActionIndex]);
 
-    // When actionBadgeTargetIndex changes, recalculate visibility
+    // When action badge targets change, recalculate visibility
     useEffect(() => {
         ref.current.actionBadgeTargetIndex = actionBadgeTargetIndex;
+        ref.current.actionBadgeTargetReportActionIDs = actionBadgeTargetReportActionIDs;
+        ref.current.actionBadgeTargetIndexes = actionBadgeTargetIndexes;
         onViewableItemsChanged({viewableItems: ref.current.previousViewableItems, changed: []});
-    }, [onViewableItemsChanged, actionBadgeTargetIndex]);
+    }, [onViewableItemsChanged, actionBadgeTargetIndex, actionBadgeTargetReportActionIDs, actionBadgeTargetIndexes]);
 
     return {
         isFloatingMessageCounterVisible,
         setIsFloatingMessageCounterVisible,
         isActionBadgeAboveViewport,
+        actionBadgeScrollTargetIndex,
         trackVerticalScrolling,
         onViewableItemsChanged,
     };

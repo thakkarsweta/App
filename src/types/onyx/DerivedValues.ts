@@ -38,6 +38,11 @@ type ReportAttributes = {
      */
     actionTargetReportActionID?: string;
     /**
+     * All parent-chat REPORT_PREVIEW action IDs for errored child expense reports, ordered oldest first.
+     * Used by the report page floating Fix badge to track viewport visibility across multiple errors.
+     */
+    actionTargetReportActionIDs?: string[];
+    /**
      * The errors of the report.
      */
     reportErrors: Errors;

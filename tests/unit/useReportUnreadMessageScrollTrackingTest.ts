@@ -415,5 +415,161 @@ describe('useReportUnreadMessageScrollTracking', () => {
 
             expect(result.current.isActionBadgeAboveViewport).toBe(true);
         });
+
+        it('shows the Fix badge when a newer errored preview is visible but an older one is offscreen above', () => {
+            const offsetRef = {current: 0};
+            const {result} = renderHook(() =>
+                useReportUnreadMessageScrollTracking({
+                    reportID,
+                    currentVerticalScrollingOffsetRef: offsetRef,
+                    readActionSkippedRef: readActionRefFalse,
+                    onTrackScrolling: onTrackScrollingMockFn,
+                    hasNewerActions: false,
+                    unreadMarkerReportActionIndex: -1,
+                    hasOnceLoadedReportActions: true,
+                    isInverted: true,
+                    actionBadgeTargetIndex: 5,
+                    actionBadgeTargetReportActionIDs: ['preview_error_1', 'preview_error_2'],
+                    actionBadgeTargetIndexes: [5, 2],
+                }),
+            );
+
+            act(() => {
+                result.current.onViewableItemsChanged({
+                    viewableItems: [
+                        {index: 0, key: 'reportActions_0', isViewable: true, item: {}},
+                        {index: 1, key: 'reportActions_1', isViewable: true, item: {}},
+                        {index: 2, key: 'preview_error_2', isViewable: true, item: {reportActionID: 'preview_error_2'}},
+                        {index: 3, key: 'reportActions_3', isViewable: true, item: {}},
+                    ],
+                    changed: [],
+                });
+            });
+
+            expect(result.current.isActionBadgeAboveViewport).toBe(true);
+            expect(result.current.actionBadgeScrollTargetIndex).toBe(5);
+        });
+
+        it('hides the Fix badge when all errored preview targets are visible in the viewport', () => {
+            const offsetRef = {current: 0};
+            const {result} = renderHook(() =>
+                useReportUnreadMessageScrollTracking({
+                    reportID,
+                    currentVerticalScrollingOffsetRef: offsetRef,
+                    readActionSkippedRef: readActionRefFalse,
+                    onTrackScrolling: onTrackScrollingMockFn,
+                    hasNewerActions: false,
+                    unreadMarkerReportActionIndex: -1,
+                    hasOnceLoadedReportActions: true,
+                    isInverted: true,
+                    actionBadgeTargetIndex: 2,
+                    actionBadgeTargetReportActionIDs: ['preview_error_1', 'preview_error_2'],
+                    actionBadgeTargetIndexes: [2, 3],
+                }),
+            );
+
+            act(() => {
+                result.current.onViewableItemsChanged({
+                    viewableItems: [
+                        {index: 1, key: 'preview_error_1', isViewable: true, item: {reportActionID: 'preview_error_1'}},
+                        {index: 2, key: 'preview_error_2', isViewable: true, item: {reportActionID: 'preview_error_2'}},
+                        {index: 3, key: 'reportActions_3', isViewable: true, item: {}},
+                    ],
+                    changed: [],
+                });
+            });
+
+            expect(result.current.isActionBadgeAboveViewport).toBe(false);
+            expect(result.current.actionBadgeScrollTargetIndex).toBe(-1);
+        });
+
+        it('scrolls to the nearest offscreen-above errored preview when multiple Fix targets exist', () => {
+            const offsetRef = {current: 0};
+            const {result} = renderHook(() =>
+                useReportUnreadMessageScrollTracking({
+                    reportID,
+                    currentVerticalScrollingOffsetRef: offsetRef,
+                    readActionSkippedRef: readActionRefFalse,
+                    onTrackScrolling: onTrackScrollingMockFn,
+                    hasNewerActions: false,
+                    unreadMarkerReportActionIndex: -1,
+                    hasOnceLoadedReportActions: true,
+                    isInverted: true,
+                    actionBadgeTargetIndex: 2,
+                    actionBadgeTargetReportActionIDs: ['preview_error_1', 'preview_error_2'],
+                    actionBadgeTargetIndexes: [2, 5],
+                }),
+            );
+
+            act(() => {
+                result.current.onViewableItemsChanged({
+                    viewableItems: [
+                        {index: 0, key: 'reportActions_0', isViewable: true, item: {}},
+                        {index: 1, key: 'reportActions_1', isViewable: true, item: {}},
+                        {index: 2, key: 'preview_error_1', isViewable: true, item: {reportActionID: 'preview_error_1'}},
+                        {index: 3, key: 'reportActions_3', isViewable: true, item: {}},
+                    ],
+                    changed: [],
+                });
+            });
+
+            expect(result.current.isActionBadgeAboveViewport).toBe(true);
+            expect(result.current.actionBadgeScrollTargetIndex).toBe(5);
+
+            act(() => {
+                result.current.onViewableItemsChanged({
+                    viewableItems: [
+                        {index: 0, key: 'reportActions_0', isViewable: true, item: {}},
+                        {index: 1, key: 'reportActions_1', isViewable: true, item: {}},
+                        {index: 2, key: 'reportActions_2', isViewable: true, item: {}},
+                        {index: 3, key: 'reportActions_3', isViewable: true, item: {}},
+                    ],
+                    changed: [],
+                });
+            });
+
+            expect(result.current.isActionBadgeAboveViewport).toBe(true);
+            expect(result.current.actionBadgeScrollTargetIndex).toBe(5);
+        });
+
+        it('does not flash the Fix badge when the target index shifts but the target reportActionID remains visible', () => {
+            const offsetRef = {current: 0};
+            let actionBadgeTargetIndex = 2;
+            const actionBadgeTargetReportActionIDs = ['preview_error_1'];
+            let actionBadgeTargetIndexes = [2];
+            const {result, rerender} = renderHook(() =>
+                useReportUnreadMessageScrollTracking({
+                    reportID,
+                    currentVerticalScrollingOffsetRef: offsetRef,
+                    readActionSkippedRef: readActionRefFalse,
+                    onTrackScrolling: onTrackScrollingMockFn,
+                    hasNewerActions: false,
+                    unreadMarkerReportActionIndex: -1,
+                    hasOnceLoadedReportActions: true,
+                    isInverted: true,
+                    actionBadgeTargetIndex,
+                    actionBadgeTargetReportActionIDs,
+                    actionBadgeTargetIndexes,
+                }),
+            );
+
+            act(() => {
+                result.current.onViewableItemsChanged({
+                    viewableItems: [
+                        {index: 1, key: 'reportActions_1', isViewable: true, item: {}},
+                        {index: 2, key: 'preview_error_1', isViewable: true, item: {reportActionID: 'preview_error_1'}},
+                        {index: 3, key: 'reportActions_3', isViewable: true, item: {}},
+                    ],
+                    changed: [],
+                });
+            });
+            expect(result.current.isActionBadgeAboveViewport).toBe(false);
+
+            actionBadgeTargetIndex = 3;
+            actionBadgeTargetIndexes = [3];
+            rerender({});
+
+            expect(result.current.isActionBadgeAboveViewport).toBe(false);
+        });
     });
 });
