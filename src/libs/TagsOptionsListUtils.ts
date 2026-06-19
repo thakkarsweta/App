@@ -8,7 +8,7 @@ import {hasEnabledOptions} from './OptionsListUtils';
 import type {Option} from './OptionsListUtils';
 import {getCleanedTagName, getTagList, getTagLists, hasDependentTags as hasDependentTagsPolicyUtils, isMultiLevelTags as isMultiLevelTagsPolicyUtils} from './PolicyUtils';
 import tokenizedSearch from './tokenizedSearch';
-import {getTagArrayFromName, getTagForDisplay} from './TransactionUtils';
+import {getTagArrayFromName} from './TransactionUtils';
 
 type SelectedTagOption = {
     name: string;
@@ -218,12 +218,7 @@ function getTagVisibility({
 
         if (shouldShowTags) {
             if (hasDependentTags) {
-                if (index === 0) {
-                    shouldShow = true;
-                } else {
-                    const prevTagValue = getTagForDisplay(transaction, index - 1);
-                    shouldShow = !!prevTagValue;
-                }
+                shouldShow = shouldShowDependentTagList(index, transaction?.tag, tags);
             } else {
                 shouldShow = !isMultilevelTags || hasEnabledOptions(tags);
             }

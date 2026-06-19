@@ -7,14 +7,18 @@ import type {MenuItemProps} from './MenuItem';
 type MenuItemWithTopDescriptionProps = MenuItemProps & {
     /** Should the menu item be highlighted? */
     highlighted?: boolean;
+
+    /** When true, the highlight animation starts fully visible instead of fading in from opacity 0 */
+    skipHighlightInitialFade?: boolean;
 };
 
-function MenuItemWithTopDescription({highlighted, outerWrapperStyle, ref, ...props}: MenuItemWithTopDescriptionProps) {
+function MenuItemWithTopDescription({highlighted, skipHighlightInitialFade, outerWrapperStyle, ref, ...props}: MenuItemWithTopDescriptionProps) {
     const theme = useTheme();
     const highlightedOuterWrapperStyle = useAnimatedHighlightStyle({
         shouldHighlight: highlighted ?? false,
         highlightColor: theme.messageHighlightBG,
         itemEnterDelay: 0,
+        skipInitialFade: skipHighlightInitialFade,
     });
 
     return (

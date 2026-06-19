@@ -913,6 +913,88 @@ describe('TagsOptionsListUtils', () => {
 
             expect(result).toEqual([{isTagRequired: true, shouldShow: true}]);
         });
+
+        it('should show dependent tag levels only when parent tag is selected and child tags are available', () => {
+            const policyWithMultipleTagLists = {...mockPolicy, hasMultipleTagLists: true};
+            const dependentPolicyTags: PolicyTagLists = {
+                tagList1: {
+                    name: 'State',
+                    required: true,
+                    tags: {
+                        california: {name: 'California', enabled: true},
+                        texas: {name: 'Texas', enabled: true},
+                    },
+                    orderWeight: 0,
+                },
+                tagList2: {
+                    name: 'Region',
+                    required: false,
+                    tags: {
+                        north: {name: 'North', enabled: true, rules: {parentTagsFilter: '^California$'}},
+                        south: {name: 'South', enabled: true, rules: {parentTagsFilter: '^Texas$'}},
+                    },
+                    orderWeight: 1,
+                },
+            };
+
+            const resultWithoutParentTag = getTagVisibility({
+                shouldShowTags: true,
+                policy: policyWithMultipleTagLists,
+                policyTags: dependentPolicyTags,
+                transaction: {tag: ''},
+            });
+
+            expect(resultWithoutParentTag).toEqual([
+                {isTagRequired: true, shouldShow: true},
+                {isTagRequired: false, shouldShow: false},
+            ]);
+
+            const resultWithParentTag = getTagVisibility({
+                shouldShowTags: true,
+                policy: policyWithMultipleTagLists,
+                policyTags: dependentPolicyTags,
+                transaction: {tag: 'California'},
+            });
+
+            expect(resultWithParentTag).toEqual([
+                {isTagRequired: true, shouldShow: true},
+                {isTagRequired: false, shouldShow: true},
+            ]);
+        });
+
+        it('should hide dependent tag levels when no enabled child tags match the selected parent', () => {
+            const policyWithMultipleTagLists = {...mockPolicy, hasMultipleTagLists: true};
+            const dependentPolicyTags: PolicyTagLists = {
+                tagList1: {
+                    name: 'State',
+                    required: true,
+                    tags: {
+                        california: {name: 'California', enabled: true},
+                    },
+                    orderWeight: 0,
+                },
+                tagList2: {
+                    name: 'Region',
+                    required: false,
+                    tags: {
+                        north: {name: 'North', enabled: true, rules: {parentTagsFilter: '^Texas$'}},
+                    },
+                    orderWeight: 1,
+                },
+            };
+
+            const result = getTagVisibility({
+                shouldShowTags: true,
+                policy: policyWithMultipleTagLists,
+                policyTags: dependentPolicyTags,
+                transaction: {tag: 'California'},
+            });
+
+            expect(result).toEqual([
+                {isTagRequired: true, shouldShow: true},
+                {isTagRequired: false, shouldShow: false},
+            ]);
+        });
     });
 
     describe('getEnabledTags', () => {

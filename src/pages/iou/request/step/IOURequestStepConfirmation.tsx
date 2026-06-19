@@ -1,5 +1,5 @@
 import {validTransactionDraftIDsSelector} from '@selectors/TransactionDraft';
-import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import {View} from 'react-native';
 import DragAndDropConsumer from '@components/DragAndDrop/Consumer';
 import DragAndDropProvider from '@components/DragAndDrop/Provider';
@@ -36,7 +36,6 @@ import {setMoneyRequestBillable, setMoneyRequestReimbursable} from '@libs/action
 import {setTransactionReport} from '@libs/actions/Transaction';
 import {isMobileSafari} from '@libs/Browser';
 import {canUseTouchScreen} from '@libs/DeviceCapabilities';
-import getIsNarrowLayout from '@libs/getIsNarrowLayout';
 import getNonEmptyStringOnyxID from '@libs/getNonEmptyStringOnyxID';
 import {
     getIsWorkspacesOnlyForTransaction,
@@ -47,15 +46,11 @@ import {
     shouldShowReceiptEmptyState,
     shouldUseTransactionDraft,
 } from '@libs/IOUUtils';
-import isReportOpenInRHP from '@libs/Navigation/helpers/isReportOpenInRHP';
-import isReportTopmostSplitNavigator from '@libs/Navigation/helpers/isReportTopmostSplitNavigator';
-import isSearchTopmostFullScreenRoute from '@libs/Navigation/helpers/isSearchTopmostFullScreenRoute';
 import {submitWithDismissFirst} from '@libs/Navigation/helpers/submitWithDismissFirst';
-import Navigation, {navigationRef} from '@libs/Navigation/Navigation';
+import Navigation from '@libs/Navigation/Navigation';
 import type {MoneyRequestNavigatorParamList} from '@libs/Navigation/types';
 import {getParticipantsOption, getReportOption} from '@libs/OptionsListUtils';
 import {findSelfDMReportID, getReportOrDraftReport, isMoneyRequestReport, isPolicyExpenseChat as isPolicyExpenseChatUtils} from '@libs/ReportUtils';
-import {buildCannedSearchQuery, getCurrentSearchQueryJSON} from '@libs/SearchQueryUtils';
 import type {SkeletonSpanReasonAttributes} from '@libs/telemetry/useSkeletonSpan';
 import {
     getRequestType,
@@ -71,7 +66,6 @@ import {removeDraftTransaction, replaceDefaultDraftTransaction} from '@userActio
 import CONST from '@src/CONST';
 import type {IOUType} from '@src/CONST';
 import ONYXKEYS from '@src/ONYXKEYS';
-import type {Route} from '@src/ROUTES';
 import ROUTES from '@src/ROUTES';
 import SCREENS from '@src/SCREENS';
 import type {Participant} from '@src/types/onyx/IOU';
@@ -392,13 +386,7 @@ function IOURequestStepConfirmation({
         backToReport,
     });
 
-    // PAY, SPLIT, and per-diem TRACK navigate to a specific destination report
-    // (not Search) after submission. Pre-inserting the Search route would leave
-    // a stale entry in the navigation stack. Non-per-diem TRACK flows can still
-    // benefit from the Search pre-insert optimization.
-    const canPreInsertSearch = iouType !== CONST.IOU.TYPE.PAY && iouType !== CONST.IOU.TYPE.SPLIT && !(isPerDiemRequest && iouType === CONST.IOU.TYPE.TRACK);
-
-    const {createTransaction, sendMoney, isConfirmed, setIsConfirmed, formHasBeenSubmitted} = useExpenseSubmission({
+    const {createTransaction, sendMoney, isConfirmed, setIsConfirmed} = useExpenseSubmission({
         transaction,
         transactions,
         receiptFiles,
@@ -435,81 +423,10 @@ function IOURequestStepConfirmation({
     // other tabs.
     const canDismissFromSearch = iouType !== CONST.IOU.TYPE.PAY && iouType !== CONST.IOU.TYPE.SPLIT;
 
-    const hasPreInsertFired = useRef(false);
-    const isTransactionReady = !!transaction;
     const selfDMReportID = iouType === CONST.IOU.TYPE.TRACK ? findSelfDMReportID() : undefined;
     const isMRReport = isMoneyRequestReport(report);
     const destinationReportID =
         backToReport ?? (isPerDiemRequest && isMRReport && Navigation.getTopmostReportId() !== report?.reportID ? report?.chatReportID : report?.reportID) ?? selfDMReportID;
-    const [destinationReport] = useOnyx(`${ONYXKEYS.COLLECTION.REPORT}${destinationReportID}`);
-
-    useEffect(() => {
-        if (hasPreInsertFired.current || !isTransactionReady || !getIsNarrowLayout()) {
-            return;
-        }
-
-        // Search pre-insert: global create flows that navigate to Search after submit.
-        // Also pre-insert when Search is already on top but showing a different type
-        // (e.g. Invoice tab when submitting an Expense) so the correct tab is revealed on dismiss.
-        const searchType = iouType === CONST.IOU.TYPE.INVOICE ? CONST.SEARCH.DATA_TYPES.INVOICE : CONST.SEARCH.DATA_TYPES.EXPENSE;
-        const isSearchOnTopWithDifferentType = isSearchTopmostFullScreenRoute() && getCurrentSearchQueryJSON()?.type !== searchType;
-        const shouldPreInsertSearch = isFromGlobalCreate && canPreInsertSearch && !isReportTopmostSplitNavigator() && (!isSearchTopmostFullScreenRoute() || isSearchOnTopWithDifferentType);
-
-        // Report pre-insert: dismiss modal flows that open an existing report after submit.
-        // Skip when the destination is already the topmost fullscreen report to avoid
-        // pushing a duplicate route (which would require an extra back press).
-
-        // Only eligible when search pre-insert didn't win, and the flow ends at a report (not Search).
-        // When Search is the topmost fullscreen and there's no report context (e.g. QAB from Spend tab),
-        // pre-inserting a report is wrong - the user should stay on Search after submission.
-        const canUseReportPreInsert = !shouldPreInsertSearch && (isReportTopmostSplitNavigator() || (!isFromGlobalCreate && !isSearchTopmostFullScreenRoute()));
-
-        // RHP has its own dismiss handler; pre-inserting under it would break the stack.
-        const isOutsideRHP = !isReportOpenInRHP(navigationRef.getRootState());
-
-        // Don't pre-insert if the report is already showing - it would push a duplicate route.
-        const hasValidDestination = !!destinationReportID && Navigation.getTopmostReportId() !== destinationReportID;
-
-        // The report must be in Onyx so the pre-inserted screen can render immediately.
-        const isDestinationReportLoaded = !!destinationReportID && !!getReportOrDraftReport(destinationReportID, undefined, undefined, undefined, destinationReport)?.reportID;
-
-        const shouldPreInsertReport = canUseReportPreInsert && isOutsideRHP && hasValidDestination && isDestinationReportLoaded;
-
-        if (!shouldPreInsertSearch && !shouldPreInsertReport) {
-            return;
-        }
-
-        hasPreInsertFired.current = true;
-
-        const preInsertFullscreenRoute: Route = shouldPreInsertSearch
-            ? ROUTES.SEARCH_ROOT.getRoute({
-                  query: buildCannedSearchQuery({type: searchType}),
-              })
-            : ROUTES.REPORT_WITH_ID.getRoute(destinationReportID);
-
-        const timer = setTimeout(() => {
-            Navigation.preInsertFullscreenUnderRHP(preInsertFullscreenRoute);
-        }, CONST.PRE_INSERT_FULLSCREEN_DELAY);
-
-        return () => {
-            clearTimeout(timer);
-
-            // eslint-disable-next-line react-hooks/exhaustive-deps -- formHasBeenSubmitted is a stable ref from useExpenseSubmission; reading .current in cleanup is intentional
-            if (!Navigation.getIsFullscreenPreInsertedUnderRHP() || formHasBeenSubmitted.current) {
-                return;
-            }
-
-            Navigation.removePreInsertedFullscreenIfNeeded();
-        };
-        // isFromGlobalCreate, iouType, and canPreInsertSearch are stable for the lifetime of
-        // this screen instance. isTransactionReady and destinationReportID may each flip once
-        // (false -> true / undefined -> ID) as data loads asynchronously, re-triggering the effect.
-        // hasPreInsertFired prevents double-firing. Note: if destinationReportID were to change
-        // from one valid ID to another (extremely unlikely with Onyx), the pre-insert would not
-        // re-fire. This is acceptable because the pre-inserted route is already correct for
-        // the original destination, and the submit handler will navigate correctly regardless.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isTransactionReady, destinationReportID]);
 
     const handleSendMoney = useCallback(
         (paymentMethod: PaymentMethodType | undefined) => {

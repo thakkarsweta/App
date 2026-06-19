@@ -26,7 +26,7 @@ import type {Route} from '@src/ROUTES';
 import ROUTES from '@src/ROUTES';
 import SCREENS, {PROTECTED_SCREENS} from '@src/SCREENS';
 import type {SidePanel} from '@src/types/onyx';
-import {clearPreInsertedOriginalTabRoute, getPreInsertedOriginalTabRoute} from './AppNavigator/createRootStackNavigator/GetStateForActionHandlers';
+import {clearPreInsertedOriginalTabRoute, getPreInsertedOriginalTabRoute, willHandleReplaceFullscreenUnderRHP} from './AppNavigator/createRootStackNavigator/GetStateForActionHandlers';
 import getInitialSplitNavigatorState from './AppNavigator/createSplitNavigator/getInitialSplitNavigatorState';
 import originalCloseRHPFlow from './helpers/closeRHPFlow';
 import getActiveTabName from './helpers/getActiveTabName';
@@ -1028,6 +1028,12 @@ function revealRouteBeforeDismissingModal(route: Route, options?: {afterTransiti
         return;
     }
 
+    const rootState = navigationRef.current.getRootState();
+    if (!willHandleReplaceFullscreenUnderRHP(rootState, route)) {
+        dismissModal({afterTransition: options?.afterTransition, waitForTransition: getIsNarrowLayout()});
+        return;
+    }
+
     requestAnimationFrame(() => {
         navigationRef.current?.dispatch({
             type: CONST.NAVIGATION.ACTION_TYPE.REPLACE_FULLSCREEN_UNDER_RHP,
@@ -1072,6 +1078,11 @@ function preInsertFullscreenUnderRHP(route: Route) {
 
     if (!canNavigate('preInsertFullscreenUnderRHP', {route}) || !navigationRef.current) {
         Log.hmmm(`[Navigation] Unable to pre-insert fullscreen under RHP. Can't navigate.`, {route});
+        return;
+    }
+
+    const rootState = navigationRef.current.getRootState();
+    if (!willHandleReplaceFullscreenUnderRHP(rootState, route)) {
         return;
     }
 

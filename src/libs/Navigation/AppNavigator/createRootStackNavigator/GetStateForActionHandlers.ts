@@ -1,14 +1,16 @@
 import type {CommonActions, NavigationState, PartialState, RouterConfigOptions, StackActionType, StackNavigationState} from '@react-navigation/native';
-import {StackActions} from '@react-navigation/native';
+import {StackActions, StackRouter} from '@react-navigation/native';
 import type {ParamListBase, Router} from '@react-navigation/routers';
 import Log from '@libs/Log';
 import buildTabNavigatorNestedState from '@libs/Navigation/helpers/buildTabNavigatorNestedState';
 import getStateFromPath from '@libs/Navigation/helpers/getStateFromPath';
 import {isFullScreenName} from '@libs/Navigation/helpers/isNavigatorName';
+import isSideModalNavigator from '@libs/Navigation/helpers/isSideModalNavigator';
 import {SIDEBAR_TO_SPLIT, SPLIT_TO_SIDEBAR} from '@libs/Navigation/linkingConfig/RELATIONS';
 import type {NavigationPartialRoute} from '@libs/Navigation/types';
 import CONST from '@src/CONST';
 import NAVIGATORS from '@src/NAVIGATORS';
+import type {Route} from '@src/ROUTES';
 import SCREENS from '@src/SCREENS';
 import type {
     OpenDomainSplitActionType,
@@ -179,6 +181,139 @@ function getFocusedRouteFromNavigatorState(navState: NavigationState | PartialSt
             : // Partial states from linking should include `index`; fall back to first route.
               0;
     return navState.routes[idx] as NavigationPartialRoute;
+}
+
+/**
+ * Merges the incoming target tab subtree into the existing TabNavigator state.
+ * When lazy tabs omit unvisited screens from `routes`, `buildTabNavigatorNestedState` supplies the
+ * full tab strip so pre-insert can still switch to Search without dispatching a no-op action.
+ */
+function mergeTabNavigatorStateForReplace(existingTabState: NavigationState, focusedTargetTab: NavigationPartialRoute): NavigationState {
+    const selectedTabRoute: NavigationPartialRoute = {
+        name: focusedTargetTab.name,
+        ...(focusedTargetTab.params ? {params: focusedTargetTab.params as Record<string, unknown>} : {}),
+        ...(focusedTargetTab.state ? {state: focusedTargetTab.state as PartialState<NavigationState>} : {}),
+    };
+
+    const builtTabState = buildTabNavigatorNestedState(selectedTabRoute) as NavigationState;
+    const targetTabIndex = builtTabState.index ?? 0;
+
+    const mergedRoutes = builtTabState.routes.map((builtRoute, index) => {
+        if (index !== targetTabIndex) {
+            const existingRoute = existingTabState.routes.find((route) => route.name === builtRoute.name);
+            if (!existingRoute) {
+                return builtRoute;
+            }
+            return {
+                ...builtRoute,
+                ...(existingRoute.state ? {state: existingRoute.state} : {}),
+                ...(existingRoute.params ? {params: existingRoute.params} : {}),
+            };
+        }
+
+        let mergedNestedState = focusedTargetTab.state;
+        const existingNestedRoutes = (builtRoute.state as PartialState<NavigationState> | undefined)?.routes;
+        const newNestedRoutes = focusedTargetTab.state?.routes;
+        const existingFirstRoute = existingNestedRoutes?.at(0);
+        const newFirstRoute = newNestedRoutes?.at(0);
+        const defaultSidebarRouteName = builtRoute.name in SPLIT_TO_SIDEBAR ? SPLIT_TO_SIDEBAR[builtRoute.name as keyof typeof SPLIT_TO_SIDEBAR] : undefined;
+        const sidebarRoute: NavigationPartialRoute | undefined = existingFirstRoute ?? (defaultSidebarRouteName ? {name: defaultSidebarRouteName} : undefined);
+        if (sidebarRoute && newFirstRoute && sidebarRoute.name !== newFirstRoute.name) {
+            const prependedRoutes = [sidebarRoute, ...(newNestedRoutes ?? [])];
+            mergedNestedState = {...focusedTargetTab.state, routes: prependedRoutes, index: prependedRoutes.length - 1};
+        }
+
+        const sanitizedRoute = withSanitizedDeepLinkParams(builtRoute, focusedTargetTab.params as Record<string, unknown> | undefined);
+        return {
+            ...sanitizedRoute,
+            ...(mergedNestedState !== undefined ? {state: mergedNestedState as typeof builtRoute.state} : {}),
+        };
+    });
+
+    return {
+        ...builtTabState,
+        routes: mergedRoutes,
+        index: targetTabIndex,
+    };
+}
+
+/**
+ * Returns true when the root navigation state can accept REPLACE_FULLSCREEN_UNDER_RHP for
+ * the given route. Callers should check this before dispatching to avoid dev-only warnings
+ * when the action would be ignored.
+ */
+function canReplaceFullscreenUnderRHP(state: StackNavigationState<ParamListBase> | undefined, route: Route): boolean {
+    if (!state?.routes.length) {
+        return false;
+    }
+
+    let stateFromPath: PartialState<NavigationState>;
+    try {
+        stateFromPath = getStateFromPath(route);
+    } catch {
+        return false;
+    }
+
+    const targetRoute = stateFromPath?.routes.findLast((r) => isFullScreenName(r.name));
+    if (!targetRoute) {
+        return false;
+    }
+
+    const rhpRoute = state.routes.at(-1);
+    if (!rhpRoute || !isSideModalNavigator(rhpRoute.name)) {
+        return false;
+    }
+
+    const routesWithoutRHP = state.routes.slice(0, -1);
+
+    if (targetRoute.name === NAVIGATORS.TAB_NAVIGATOR) {
+        const tabNavIndex = routesWithoutRHP.findLastIndex((r) => r.name === NAVIGATORS.TAB_NAVIGATOR);
+        if (tabNavIndex < 0) {
+            return false;
+        }
+
+        const existingTabRoute = routesWithoutRHP.at(tabNavIndex);
+        const existingTabState = existingTabRoute?.state as NavigationState | undefined;
+        if (!existingTabRoute || !existingTabState?.routes?.length) {
+            return false;
+        }
+
+        const focusedTargetTab = getFocusedRouteFromNavigatorState(targetRoute.state);
+        if (!focusedTargetTab) {
+            return false;
+        }
+
+        const targetTabIndex = existingTabState.routes.findIndex((r) => r.name === focusedTargetTab.name);
+        // Lazy tabs may omit unvisited screens; buildTabNavigatorNestedState handles that path.
+        return targetTabIndex >= 0 || !!focusedTargetTab.name;
+    }
+
+    return routesWithoutRHP.length > 0;
+}
+
+/**
+ * Dry-runs REPLACE_FULLSCREEN_UNDER_RHP through the same handler the root router uses.
+ * Callers should prefer this over canReplaceFullscreenUnderRHP before dispatching so dev-only
+ * "action was not handled" warnings are never emitted for actions the stack will reject.
+ */
+function willHandleReplaceFullscreenUnderRHP(
+    state: StackNavigationState<ParamListBase> | undefined,
+    route: Route,
+    configOptions: RouterConfigOptions = {routeNames: [], routeParamList: {}, routeGetIdList: {}},
+): boolean {
+    if (!canReplaceFullscreenUnderRHP(state, route)) {
+        return false;
+    }
+
+    const dryRunStackRouter = StackRouter({});
+    const result = handleReplaceFullscreenUnderRHP(
+        state as StackNavigationState<ParamListBase>,
+        {type: CONST.NAVIGATION.ACTION_TYPE.REPLACE_FULLSCREEN_UNDER_RHP, payload: {route}},
+        configOptions,
+        dryRunStackRouter as Router<StackNavigationState<ParamListBase>, CommonActions.Action | StackActionType>,
+    );
+
+    return result !== null;
 }
 
 /**
@@ -359,15 +494,18 @@ function handleReplaceFullscreenUnderRHP(
     configOptions: RouterConfigOptions,
     stackRouter: Router<StackNavigationState<ParamListBase>, CommonActions.Action | StackActionType>,
 ) {
+    if (!canReplaceFullscreenUnderRHP(state, action.payload.route)) {
+        return null;
+    }
+
     const stateFromPath = getStateFromPath(action.payload.route);
     const targetRoute = stateFromPath?.routes.findLast((r) => isFullScreenName(r.name));
     if (!targetRoute) {
         return null;
     }
 
-    // Only operates when a modal (e.g. RHP) sits on top of the stack.
     const rhpRoute = state.routes.at(-1);
-    if (!rhpRoute || isFullScreenName(rhpRoute.name)) {
+    if (!rhpRoute) {
         return null;
     }
 
@@ -377,53 +515,53 @@ function handleReplaceFullscreenUnderRHP(
     // rather than pushing a duplicate navigator.
     if (targetRoute.name === NAVIGATORS.TAB_NAVIGATOR) {
         const tabNavIndex = routesWithoutRHP.findLastIndex((r) => r.name === NAVIGATORS.TAB_NAVIGATOR);
-        if (tabNavIndex < 0) {
-            return null;
-        }
         const existingTabRoute = routesWithoutRHP.at(tabNavIndex);
         const existingTabState = existingTabRoute?.state as NavigationState | undefined;
-        if (!existingTabRoute || !existingTabState?.routes?.length) {
-            return null;
-        }
         const focusedTargetTab = getFocusedRouteFromNavigatorState(targetRoute.state);
-        if (!focusedTargetTab) {
+        if (!existingTabRoute || !existingTabState || !focusedTargetTab) {
             return null;
         }
-        const targetTabIndex = existingTabState.routes.findIndex((r) => r.name === focusedTargetTab.name);
+
+        let targetTabIndex = existingTabState.routes.findIndex((r) => r.name === focusedTargetTab.name);
+        let updatedTabState: NavigationState;
+
         if (targetTabIndex < 0) {
-            return null;
+            updatedTabState = mergeTabNavigatorStateForReplace(existingTabState, focusedTargetTab);
+            targetTabIndex = updatedTabState.index ?? 0;
+        } else {
+            // Only update the target tab's nested state; all other tabs are left intact.
+            const updatedTabRoutes = existingTabState.routes.map((r, i) => {
+                if (i !== targetTabIndex) {
+                    return r;
+                }
+                // Prepend the existing sidebar/root route (e.g. Inbox) to the incoming state when
+                // it starts with a different screen, so back navigation from the new screen
+                // lands on the sidebar. When the existing tab doesn't have nested
+                // routes (e.g. cold-start through a deep link that opens straight into a modal),
+                // fall back to the split navigator's default sidebar route so there is still
+                // something to pop back to.
+                let mergedNestedState = focusedTargetTab.state;
+                const existingNestedRoutes = (r.state as PartialState<NavigationState> | undefined)?.routes;
+                const newNestedRoutes = focusedTargetTab.state?.routes;
+                const existingFirstRoute = existingNestedRoutes?.at(0);
+                const newFirstRoute = newNestedRoutes?.at(0);
+                const defaultSidebarRouteName = r.name in SPLIT_TO_SIDEBAR ? SPLIT_TO_SIDEBAR[r.name as keyof typeof SPLIT_TO_SIDEBAR] : undefined;
+                const sidebarRoute: NavigationPartialRoute | undefined = existingFirstRoute ?? (defaultSidebarRouteName ? {name: defaultSidebarRouteName} : undefined);
+                if (sidebarRoute && newFirstRoute && sidebarRoute.name !== newFirstRoute.name) {
+                    const prependedRoutes = [sidebarRoute, ...(newNestedRoutes ?? [])];
+                    mergedNestedState = {...focusedTargetTab.state, routes: prependedRoutes, index: prependedRoutes.length - 1};
+                }
+                // Strip any RN deep-link hint chain from `r.params`; otherwise RN would run a
+                // follow-up NAVIGATE from it and override the `state` we splice below.
+                const sanitizedRoute = withSanitizedDeepLinkParams(r, focusedTargetTab.params as Record<string, unknown> | undefined);
+                return {
+                    ...sanitizedRoute,
+                    ...(mergedNestedState !== undefined ? {state: mergedNestedState as typeof r.state} : {}),
+                };
+            });
+            updatedTabState = {...existingTabState, routes: updatedTabRoutes, index: targetTabIndex};
         }
-        // Only update the target tab's nested state; all other tabs are left intact.
-        const updatedTabRoutes = existingTabState.routes.map((r, i) => {
-            if (i !== targetTabIndex) {
-                return r;
-            }
-            // Prepend the existing sidebar/root route (e.g. Inbox) to the incoming state when
-            // it starts with a different screen, so back navigation from the new screen
-            // lands on the sidebar. When the existing tab doesn't have nested
-            // routes (e.g. cold-start through a deep link that opens straight into a modal),
-            // fall back to the split navigator's default sidebar route so there is still
-            // something to pop back to.
-            let mergedNestedState = focusedTargetTab.state;
-            const existingNestedRoutes = (r.state as PartialState<NavigationState> | undefined)?.routes;
-            const newNestedRoutes = focusedTargetTab.state?.routes;
-            const existingFirstRoute = existingNestedRoutes?.at(0);
-            const newFirstRoute = newNestedRoutes?.at(0);
-            const defaultSidebarRouteName = r.name in SPLIT_TO_SIDEBAR ? SPLIT_TO_SIDEBAR[r.name as keyof typeof SPLIT_TO_SIDEBAR] : undefined;
-            const sidebarRoute: NavigationPartialRoute | undefined = existingFirstRoute ?? (defaultSidebarRouteName ? {name: defaultSidebarRouteName} : undefined);
-            if (sidebarRoute && newFirstRoute && sidebarRoute.name !== newFirstRoute.name) {
-                const prependedRoutes = [sidebarRoute, ...(newNestedRoutes ?? [])];
-                mergedNestedState = {...focusedTargetTab.state, routes: prependedRoutes, index: prependedRoutes.length - 1};
-            }
-            // Strip any RN deep-link hint chain from `r.params`; otherwise RN would run a
-            // follow-up NAVIGATE from it and override the `state` we splice below.
-            const sanitizedRoute = withSanitizedDeepLinkParams(r, focusedTargetTab.params as Record<string, unknown> | undefined);
-            return {
-                ...sanitizedRoute,
-                ...(mergedNestedState !== undefined ? {state: mergedNestedState as typeof r.state} : {}),
-            };
-        });
-        const updatedTabState = {...existingTabState, routes: updatedTabRoutes, index: targetTabIndex};
+
         const updatedTabRoute = {...existingTabRoute, state: updatedTabState} as StackNavigationState<ParamListBase>['routes'][number];
         // Save original route so handleRemoveFullscreenUnderRHP can fully restore it on cancel.
         preInsertedOriginalTabRoute = existingTabRoute;
@@ -591,6 +729,8 @@ function handleToggleMfaModalNavigatorWithHistoryAction(state: StackNavigationSt
 }
 
 export {
+    canReplaceFullscreenUnderRHP,
+    willHandleReplaceFullscreenUnderRHP,
     handleDismissModalAction,
     handleNavigatingToModalFromModal,
     handleOpenWorkspaceSplitAction,

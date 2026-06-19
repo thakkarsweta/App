@@ -1,15 +1,16 @@
-import React from 'react';
+import React, {useState} from 'react';
 import type {ValueOf} from 'type-fest';
 import MenuItemWithTopDescription from '@components/MenuItemWithTopDescription';
 import useLocalize from '@hooks/useLocalize';
 import useThemeStyles from '@hooks/useThemeStyles';
 import Navigation from '@libs/Navigation/Navigation';
+import {getLengthOfTag} from '@libs/PolicyUtils';
 import CONST from '@src/CONST';
 import type {IOUAction, IOUType} from '@src/CONST';
 import type {TranslationPaths} from '@src/languages/types';
 import ROUTES from '@src/ROUTES';
 import type * as OnyxTypes from '@src/types/onyx';
-import {createTagDisplaySelector} from './selectors';
+import {createTagDisplaySelector, tagSliceSelector} from './selectors';
 import useTransactionSelector from './useTransactionSelector';
 
 type TagFieldsProps = {
@@ -49,18 +50,33 @@ function TagFields({
 
     const tagDisplaySelector = createTagDisplaySelector(tagIndex);
     const tagDisplay = useTransactionSelector(transactionID, tagDisplaySelector);
+    const transactionTag = useTransactionSelector(transactionID, tagSliceSelector)?.tag ?? '';
+
+    const [previousTransactionTag, setPreviousTransactionTag] = useState(transactionTag);
+    const [previousTag, setPreviousTag] = useState<string | undefined>(undefined);
+    const [currentTransactionTag, setCurrentTransactionTag] = useState<string | undefined>(undefined);
+    if (transactionTag !== previousTransactionTag) {
+        setPreviousTransactionTag(transactionTag);
+        setPreviousTag(previousTransactionTag);
+        setCurrentTransactionTag(transactionTag);
+    }
 
     const displayedTag = tagDisplay ?? '';
+    const previousTagLength = getLengthOfTag(previousTag ?? '');
+    const currentTagLength = getLengthOfTag(currentTransactionTag ?? '');
+    const shouldHighlight = !displayedTag && !previousShouldShow && currentTagLength > previousTagLength;
 
     return (
         <MenuItemWithTopDescription
-            highlighted={!displayedTag && !previousShouldShow}
+            highlighted={shouldHighlight}
+            skipHighlightInitialFade
             shouldShowRightIcon={!isReadOnly}
             title={displayedTag}
             description={policyTagList.name}
             shouldShowBasicTitle
             shouldShowDescriptionOnTop
             numberOfLinesTitle={2}
+            titleStyle={styles.flex1}
             onPress={() => {
                 if (!transactionID) {
                     return;
