@@ -49,7 +49,6 @@ function InboxTabSelector() {
                         }
                         setActiveTab(key);
                     }}
-                    equalWidth
                     contentContainerStyles={styles.pb1}
                 />
             </View>
