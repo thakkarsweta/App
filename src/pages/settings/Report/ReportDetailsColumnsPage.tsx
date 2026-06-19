@@ -33,6 +33,13 @@ const REPORT_DETAILS_DEFAULT_COLUMNS: SearchCustomColumnIds[] = [
     CONST.SEARCH.TABLE_COLUMNS.TOTAL,
 ];
 
+/** Tax columns are opt-in only — never pre-selected in the columns settings UI. */
+const REPORT_DETAILS_OPT_IN_TAX_COLUMNS = new Set<SearchCustomColumnIds>([CONST.SEARCH.TABLE_COLUMNS.TAX_CODE, CONST.SEARCH.TABLE_COLUMNS.TAX_RATE, CONST.SEARCH.TABLE_COLUMNS.TAX_AMOUNT]);
+
+function filterOptInTaxColumns(columns: SearchCustomColumnIds[]): SearchCustomColumnIds[] {
+    return columns.filter((col) => !REPORT_DETAILS_OPT_IN_TAX_COLUMNS.has(col));
+}
+
 function ReportDetailsColumnsPage() {
     const route = useRoute<PlatformStackRouteProp<ReportSettingsNavigatorParamList, typeof SCREENS.REPORT_SETTINGS.COLUMNS>>();
     const reportID = route.params.reportID;
@@ -62,8 +69,8 @@ function ReportDetailsColumnsPage() {
     const isLoading = !reportTransactions;
 
     // When no custom columns are saved, compute which columns getColumnsToShow would
-    // return for this report so data-driven columns (e.g. Exchange rate, Original amount,
-    // Tax rate, Tax amount) appear pre-selected when they have data on the table.
+    // return for this report so data-driven columns (e.g. Exchange rate, Original amount)
+    // appear pre-selected when they have data on the table.
     const effectiveColumns = useMemo(() => {
         const savedColumns = (reportDetailsColumns ?? []) as SearchCustomColumnIds[];
         if (savedColumns.length > 0) {
@@ -87,7 +94,8 @@ function ReportDetailsColumnsPage() {
         });
 
         // Filter to only columns available in the custom columns list (drops RECEIPT/TYPE/COMMENTS etc.)
-        return visibleColumns.filter((col) => allTypeCustomColumns.includes(col as SearchCustomColumnIds)) as SearchCustomColumnIds[];
+        // and exclude tax columns — they are opt-in and should not be pre-checked by default.
+        return filterOptInTaxColumns(visibleColumns.filter((col) => allTypeCustomColumns.includes(col as SearchCustomColumnIds)) as SearchCustomColumnIds[]);
     }, [reportDetailsColumns, reportTransactions, currentUserDetails?.accountID, report, policy, policyCategories, allTypeCustomColumns]);
 
     const requiredColumns = new Set<SearchCustomColumnIds>([CONST.SEARCH.TABLE_COLUMNS.TOTAL]);

@@ -5823,12 +5823,20 @@ function getColumnsToShow({
             // When the user explicitly selected the tax columns (customResult) and the workspace
             // has taxes enabled, keep them regardless of per-transaction values — older expenses
             // created before taxes were turned on still have null taxCode/taxAmount/taxValue.
-            const hasTaxInfo = (!!customResult && isPolicyTaxEnabled) || !!transaction.taxCode || !!transaction.taxAmount || !!transaction.taxValue;
+            // In the default expense report view, never infer tax columns from transaction data —
+            // they should only appear when the user opts in via column settings.
+            const hasUserSelectedTaxColumns =
+                filteredVisibleColumns.includes(CONST.SEARCH.TABLE_COLUMNS.TAX_CODE) ||
+                filteredVisibleColumns.includes(CONST.SEARCH.TABLE_COLUMNS.TAX_RATE) ||
+                filteredVisibleColumns.includes(CONST.SEARCH.TABLE_COLUMNS.TAX_AMOUNT);
+            const shouldInferTaxFromTransaction = !isExpenseReportView || hasUserSelectedTaxColumns;
+            const hasTaxInfo =
+                (hasUserSelectedTaxColumns && isPolicyTaxEnabled) || (shouldInferTaxFromTransaction && (!!transaction.taxCode || !!transaction.taxAmount || !!transaction.taxValue));
             if (hasTaxInfo) {
                 columns[CONST.SEARCH.TABLE_COLUMNS.TAX_RATE] = true;
                 columns[CONST.SEARCH.TABLE_COLUMNS.TAX_AMOUNT] = true;
             }
-            if ((!!customResult && isPolicyTaxEnabled) || !!transaction.taxCode) {
+            if ((hasUserSelectedTaxColumns && isPolicyTaxEnabled) || (shouldInferTaxFromTransaction && !!transaction.taxCode)) {
                 columns[CONST.SEARCH.TABLE_COLUMNS.TAX_CODE] = true;
             }
             if (hasDisplayableMCC(transaction.mcc)) {
