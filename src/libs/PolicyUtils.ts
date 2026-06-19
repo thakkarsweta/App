@@ -1400,7 +1400,7 @@ function getAllTaxRatesNamesAndValues(policies: OnyxCollection<Policy>): Record<
 }
 
 /**
- * Whether the tax rate can be deleted and disabled
+ * Whether the tax rate can be deleted or disabled. Default workspace and foreign currency tax rates cannot be deleted or disabled.
  */
 function canEditTaxRate(policy: Policy, taxID: string): boolean {
     return policy.taxRates?.defaultExternalID !== taxID && policy.taxRates?.foreignTaxDefault !== taxID;
