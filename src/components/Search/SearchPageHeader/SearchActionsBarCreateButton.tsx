@@ -1,3 +1,4 @@
+import {useFocusEffect} from '@react-navigation/native';
 import {emailSelector} from '@selectors/Session';
 import {validTransactionDraftIDsSelector} from '@selectors/TransactionDraft';
 import React, {useCallback, useMemo, useRef, useState} from 'react';
@@ -101,6 +102,14 @@ function SearchActionsBarCreateButton() {
     });
 
     const hideCreateMenu = useCallback(() => setIsCreateMenuActive(false), []);
+
+    // Close the menu when the screen loses focus (e.g. browser back navigates away) so the modal overlay does not block the UI.
+    useFocusEffect(
+        useCallback(() => {
+            return () => hideCreateMenu();
+        }, [hideCreateMenu]),
+    );
+
     const showCreateMenu = useCallback(() => {
         if (!createButtonRef.current) {
             return;
@@ -225,6 +234,7 @@ function SearchActionsBarCreateButton() {
                     horizontal: CONST.MODAL.ANCHOR_ORIGIN_HORIZONTAL.RIGHT,
                     vertical: CONST.MODAL.ANCHOR_ORIGIN_VERTICAL.TOP,
                 }}
+                shouldHandleNavigationBack
             />
             <Button
                 ref={createButtonRef}
