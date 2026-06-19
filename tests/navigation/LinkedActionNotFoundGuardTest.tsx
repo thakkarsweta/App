@@ -19,6 +19,7 @@ jest.mock('@libs/Navigation/Navigation', () => ({
     __esModule: true,
     default: {
         setParams: (...args: unknown[]) => mockSetParams(...args),
+        getActiveRoute: jest.fn(() => ''),
         getActiveRouteWithoutParams: jest.fn(() => ''),
         isNavigationReady: () => mockIsNavigationReady(),
     },
@@ -64,9 +65,11 @@ jest.mock('@hooks/useResponsiveLayout', () => ({
     default: () => ({shouldUseNarrowLayout: false}),
 }));
 
+let mockIsReportActionVisible = true;
+
 jest.mock('@libs/ReportActionsUtils', () => ({
     ...jest.requireActual('@libs/ReportActionsUtils'),
-    isReportActionVisible: () => true,
+    isReportActionVisible: () => mockIsReportActionVisible,
     isWhisperAction: () => false,
 }));
 
@@ -122,6 +125,7 @@ describe('LinkedActionNotFoundGuard', () => {
         mockRouteParams.reportActionID = REPORT_ACTION_ID;
         mockLinkedAction = createReportAction();
         mockIsLoadingInitialReportActions = false;
+        mockIsReportActionVisible = true;
     });
 
     it('renders children when linked action exists', () => {
@@ -172,6 +176,21 @@ describe('LinkedActionNotFoundGuard', () => {
         );
 
         // wasEverVisible is false, so the cleanup effect should NOT fire
+        expect(mockSetParams).not.toHaveBeenCalled();
+    });
+
+    it('does not auto-navigate away when linked action exists but is deleted or hidden', () => {
+        mockLinkedAction = createReportAction({
+            message: [{text: '', type: 'TEXT', html: '', deleted: '2024-01-01 00:00:00'}],
+        });
+        mockIsReportActionVisible = false;
+
+        render(
+            <LinkedActionNotFoundGuard>
+                <TestChildren />
+            </LinkedActionNotFoundGuard>,
+        );
+
         expect(mockSetParams).not.toHaveBeenCalled();
     });
 
