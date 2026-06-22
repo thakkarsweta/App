@@ -2,7 +2,7 @@ import React from 'react';
 import {View} from 'react-native';
 import type {OnyxEntry} from 'react-native-onyx';
 import SearchBulkActionsButton from '@components/Search/SearchBulkActionsButton';
-import {useSelectionCounts} from '@components/Search/SearchSelectionProvider';
+import {useSearchSelectionContext} from '@components/Search/SearchContext';
 import type {SearchQueryJSON} from '@components/Search/types';
 import useThemeStyles from '@hooks/useThemeStyles';
 import type {SearchResults} from '@src/types/onyx';
@@ -22,8 +22,8 @@ type SearchActionsBarWideProps = {
 
 function SearchActionsBarWide({queryJSON, searchResults, handleSearch, onSort}: SearchActionsBarWideProps) {
     const styles = useThemeStyles();
-    const {selected} = useSelectionCounts();
-    const hasSelectedItems = selected > 0;
+    const {hasSelectedTransactions} = useSearchSelectionContext();
+    const hasSelectedItems = hasSelectedTransactions;
 
     return (
         <View style={[styles.searchActionsBarContainer, styles.gap2, styles.mt3]}>

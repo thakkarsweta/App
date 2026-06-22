@@ -1,6 +1,6 @@
-import React, {useEffect, useRef, useState} from 'react';
+import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {isEmptyObject} from '@src/types/utils/EmptyObject';
-import {useSearchQueryContext, useSearchSelectionActions, useSearchSelectionContext} from './SearchContext';
+import {useSearchQueryContext, useSearchResultsContext, useSearchSelectionActions, useSearchSelectionContext} from './SearchContext';
 import {SearchSelectionActionsContext, SearchSelectionContext} from './SearchContextDefinitions';
 import {deriveSelectedReports} from './selectionBuilders';
 import type {SearchData, SearchSelectionActionsValue, SearchSelectionContextValue, SelectedReports, SelectedTransactions} from './types';
@@ -16,7 +16,48 @@ type SelectionState = {
     currentSelectedTransactionReportID: string | undefined;
     shouldTurnOffSelectionMode: boolean;
     areAllMatchingItemsSelected: boolean;
+    excludedTransactionsFromSelectAll: Record<string, true>;
+    selectAllMatchingSnapshotCount: number | undefined;
+    selectAllMatchingVisibleSnapshotCount: number | undefined;
 };
+
+function getValidSearchCount(count: number | null | undefined): number | undefined {
+    return typeof count === 'number' && count > 0 ? count : undefined;
+}
+
+function getServerTotalForSelectAll(selectAllMatchingSnapshotCount: number | undefined, liveSearchCount: number | null | undefined): number | undefined {
+    const snapshotTotal = getValidSearchCount(selectAllMatchingSnapshotCount);
+    const liveTotal = getValidSearchCount(liveSearchCount);
+
+    if (snapshotTotal != null && liveTotal != null) {
+        return Math.max(snapshotTotal, liveTotal);
+    }
+
+    return snapshotTotal ?? liveTotal;
+}
+
+function getSelectAllMatchingDisplayCount(
+    excludedTransactionsFromSelectAll: Record<string, true>,
+    selectAllMatchingSnapshotCount: number | undefined,
+    selectAllMatchingVisibleSnapshotCount: number | undefined,
+    liveSearchCount: number | null | undefined,
+    hasMoreResults: boolean | undefined,
+): number {
+    const excludedCount = Object.keys(excludedTransactionsFromSelectAll).length;
+    const serverTotal = getServerTotalForSelectAll(selectAllMatchingSnapshotCount, liveSearchCount);
+
+    if (serverTotal != null) {
+        return Math.max(0, serverTotal - excludedCount);
+    }
+
+    // Only fall back to the visible page count when every matching item is on screen. With more pages, that
+    // under-counts (e.g. 50 visible − 3 excluded = 47 while the real total is 57 − 3 = 54).
+    if (!hasMoreResults && typeof selectAllMatchingVisibleSnapshotCount === 'number' && selectAllMatchingVisibleSnapshotCount > 0) {
+        return Math.max(0, selectAllMatchingVisibleSnapshotCount - excludedCount);
+    }
+
+    return 0;
+}
 
 const defaultSelectionState: SelectionState = {
     selectedTransactions: {},
@@ -25,11 +66,15 @@ const defaultSelectionState: SelectionState = {
     currentSelectedTransactionReportID: undefined,
     shouldTurnOffSelectionMode: false,
     areAllMatchingItemsSelected: false,
+    excludedTransactionsFromSelectAll: {},
+    selectAllMatchingSnapshotCount: undefined,
+    selectAllMatchingVisibleSnapshotCount: undefined,
 };
 
 // Owns selection state + pure setters only; the write actions (toggle/toggleAll) live in SearchWriteActionsProvider.
 function SearchSelectionProvider({children}: SearchSelectionProviderProps) {
     const {currentSearchHash} = useSearchQueryContext();
+    const {currentSearchResults} = useSearchResultsContext();
 
     const areTransactionsEmpty = useRef(true);
     const [selectionState, setSelectionState] = useState<SelectionState>(defaultSelectionState);
@@ -38,6 +83,30 @@ function SearchSelectionProvider({children}: SearchSelectionProviderProps) {
     useEffect(() => {
         currentSearchHashRef.current = currentSearchHash;
     }, [currentSearchHash]);
+
+    // Backfill the server total when search metadata arrives after "select all matching" was enabled.
+    useEffect(() => {
+        const liveCount = getValidSearchCount(currentSearchResults?.search?.count);
+        if (!liveCount) {
+            return;
+        }
+
+        setSelectionState((prevState) => {
+            if (!prevState.areAllMatchingItemsSelected) {
+                return prevState;
+            }
+
+            const prevSnapshotCount = getValidSearchCount(prevState.selectAllMatchingSnapshotCount);
+            if (prevSnapshotCount != null && prevSnapshotCount >= liveCount) {
+                return prevState;
+            }
+
+            return {
+                ...prevState,
+                selectAllMatchingSnapshotCount: liveCount,
+            };
+        });
+    }, [currentSearchResults?.search?.count]);
 
     const setSelectedTransactions: SearchSelectionActionsValue['setSelectedTransactions'] = (transactionIDs, data) => {
         if (transactionIDs instanceof Array) {
@@ -78,19 +147,48 @@ function SearchSelectionProvider({children}: SearchSelectionProviderProps) {
     // untouched, which is what the former `isRefreshingSelection` flag protected.
     const applySelection: SearchSelectionActionsValue['applySelection'] = (updater, options) => {
         setSelectionState((prevState) => {
+            if (options?.resetSelectAllMatching) {
+                return {
+                    ...prevState,
+                    selectedTransactions: {},
+                    selectedReports: options?.data ? deriveSelectedReports({}, options.data) : [],
+                    areAllMatchingItemsSelected: false,
+                    excludedTransactionsFromSelectAll: {},
+                    selectAllMatchingSnapshotCount: undefined,
+                    selectAllMatchingVisibleSnapshotCount: undefined,
+                    shouldTurnOffSelectionMode: false,
+                };
+            }
+
             const selectedTransactions = updater(prevState.selectedTransactions);
-            if (selectedTransactions === prevState.selectedTransactions) {
+            const toggleExcludedKey = options?.toggleExcludedFromSelectAll;
+            let excludedTransactionsFromSelectAll = prevState.excludedTransactionsFromSelectAll;
+
+            if (toggleExcludedKey) {
+                if (excludedTransactionsFromSelectAll[toggleExcludedKey]) {
+                    const {[toggleExcludedKey]: omittedKey, ...remainingExcluded} = excludedTransactionsFromSelectAll;
+                    excludedTransactionsFromSelectAll = remainingExcluded;
+                } else {
+                    excludedTransactionsFromSelectAll = {...excludedTransactionsFromSelectAll, [toggleExcludedKey]: true};
+                }
+            }
+
+            if (selectedTransactions === prevState.selectedTransactions && !toggleExcludedKey) {
                 return prevState;
             }
 
             const totalSelectableItemsCount = options?.totalSelectableItemsCount;
-            const areAllMatchingItemsSelected =
-                totalSelectableItemsCount && totalSelectableItemsCount !== Object.keys(selectedTransactions).length ? false : prevState.areAllMatchingItemsSelected;
+            const areAllMatchingItemsSelected = toggleExcludedKey
+                ? prevState.areAllMatchingItemsSelected
+                : totalSelectableItemsCount && totalSelectableItemsCount !== Object.keys(selectedTransactions).length
+                  ? false
+                  : prevState.areAllMatchingItemsSelected;
 
             return {
                 ...prevState,
                 selectedTransactions,
                 areAllMatchingItemsSelected,
+                excludedTransactionsFromSelectAll,
                 selectedReports: options?.data ? deriveSelectedReports(selectedTransactions, options.data) : prevState.selectedReports,
                 shouldTurnOffSelectionMode: false,
             };
@@ -121,14 +219,22 @@ function SearchSelectionProvider({children}: SearchSelectionProviderProps) {
         });
     };
 
-    const selectAllMatchingItems: SearchSelectionActionsValue['selectAllMatchingItems'] = (shouldSelectAll) => {
+    const selectAllMatchingItems: SearchSelectionActionsValue['selectAllMatchingItems'] = (shouldSelectAll, options) => {
         setSelectionState((prevState) => {
-            if (prevState.areAllMatchingItemsSelected === shouldSelectAll) {
+            if (prevState.areAllMatchingItemsSelected === shouldSelectAll && isEmptyObject(prevState.excludedTransactionsFromSelectAll)) {
                 return prevState;
             }
+
+            const snapshotCount = shouldSelectAll ? getValidSearchCount(options?.totalCount ?? currentSearchResults?.search?.count) : undefined;
+            const visibleSnapshotCount = shouldSelectAll ? options?.visibleSelectableCount : undefined;
+
             return {
                 ...prevState,
                 areAllMatchingItemsSelected: shouldSelectAll,
+                excludedTransactionsFromSelectAll: {},
+                selectAllMatchingSnapshotCount: snapshotCount,
+                selectAllMatchingVisibleSnapshotCount: visibleSnapshotCount,
+                ...(shouldSelectAll ? {selectedTransactions: {}, selectedReports: []} : {selectAllMatchingVisibleSnapshotCount: undefined}),
             };
         });
     };
@@ -153,6 +259,9 @@ function SearchSelectionProvider({children}: SearchSelectionProviderProps) {
                 selectedTransactions: {},
                 selectedReports: [],
                 areAllMatchingItemsSelected: false,
+                excludedTransactionsFromSelectAll: {},
+                selectAllMatchingSnapshotCount: undefined,
+                selectAllMatchingVisibleSnapshotCount: undefined,
             };
         });
     };
@@ -188,11 +297,30 @@ function SearchSelectionProvider({children}: SearchSelectionProviderProps) {
         });
     };
 
-    const hasSelectedTransactions = selectionState.selectedTransactionIDs.length > 0 || Object.values(selectionState.selectedTransactions).some((t) => t.isSelected);
+    const hasSelectedTransactions =
+        selectionState.areAllMatchingItemsSelected || selectionState.selectedTransactionIDs.length > 0 || Object.values(selectionState.selectedTransactions).some((t) => t.isSelected);
+
+    const selectionDisplayCount = useMemo(() => {
+        if (selectionState.areAllMatchingItemsSelected) {
+            return getSelectAllMatchingDisplayCount(
+                selectionState.excludedTransactionsFromSelectAll,
+                selectionState.selectAllMatchingSnapshotCount,
+                selectionState.selectAllMatchingVisibleSnapshotCount,
+                currentSearchResults?.search?.count,
+            );
+        }
+
+        return Object.values(selectionState.selectedTransactions).filter((transaction) => transaction?.isSelected).length;
+    }, [selectionState, currentSearchResults?.search?.count]);
+
+    const {selectAllMatchingSnapshotCount, selectAllMatchingVisibleSnapshotCount, ...publicSelectionState} = selectionState;
+    void selectAllMatchingSnapshotCount;
+    void selectAllMatchingVisibleSnapshotCount;
 
     const selectionValue: SearchSelectionContextValue = {
-        ...selectionState,
+        ...publicSelectionState,
         hasSelectedTransactions,
+        selectionDisplayCount,
     };
 
     const selectionActionsValue: SearchSelectionActionsValue = {
@@ -224,33 +352,43 @@ function SearchSelectionProvider({children}: SearchSelectionProviderProps) {
  * `selectedTransactions` from closure and clobber any atomic update made in the same commit.
  */
 function useSyncSelectedReports(data: SearchData) {
-    const {selectedTransactions} = useSearchSelectionContext();
+    const {selectedTransactions, areAllMatchingItemsSelected} = useSearchSelectionContext();
     const {setSelectedReports} = useSearchSelectionActions();
 
     const dataRef = useRef(data);
+    const setSelectedReportsRef = useRef(setSelectedReports);
+    setSelectedReportsRef.current = setSelectedReports;
+
     useEffect(() => {
         dataRef.current = data;
     });
 
     useEffect(() => {
-        setSelectedReports(deriveSelectedReports(selectedTransactions, dataRef.current));
-    }, [selectedTransactions, setSelectedReports]);
+        if (areAllMatchingItemsSelected) {
+            return;
+        }
+        setSelectedReportsRef.current(deriveSelectedReports(selectedTransactions, dataRef.current));
+        // `setSelectedReports` is read via a ref so this effect only runs when `selectedTransactions` changes.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedTransactions, areAllMatchingItemsSelected]);
 }
 
 /** Narrow per-row selection read: whether the row for `keyForList` is selected (or covered by select-all). */
 function useRowSelection(keyForList: string | undefined): {isSelected: boolean} {
-    const {selectedTransactions, areAllMatchingItemsSelected} = useSearchSelectionContext();
+    const {selectedTransactions, areAllMatchingItemsSelected, excludedTransactionsFromSelectAll} = useSearchSelectionContext();
     if (!keyForList) {
         return {isSelected: false};
     }
-    return {isSelected: areAllMatchingItemsSelected || !!selectedTransactions[keyForList]?.isSelected};
+    if (areAllMatchingItemsSelected) {
+        return {isSelected: !excludedTransactionsFromSelectAll?.[keyForList]};
+    }
+    return {isSelected: !!selectedTransactions[keyForList]?.isSelected};
 }
 
 /** Aggregate count of currently-selected transactions, for the selection top bar. */
 function useSelectionCounts(): {selected: number} {
-    const {selectedTransactions} = useSearchSelectionContext();
-    const selected = Object.values(selectedTransactions).filter((value) => value?.isSelected).length;
-    return {selected};
+    const {selectionDisplayCount} = useSearchSelectionContext();
+    return {selected: selectionDisplayCount};
 }
 
 export {SearchSelectionProvider, useSyncSelectedReports, useRowSelection, useSelectionCounts};

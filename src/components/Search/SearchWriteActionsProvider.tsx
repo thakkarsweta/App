@@ -1,6 +1,6 @@
 import {useIsFocused} from '@react-navigation/native';
 import {deepEqual} from 'fast-equals';
-import React, {useEffect} from 'react';
+import React, {useEffect, useRef} from 'react';
 import type {OnyxCollection, OnyxEntry} from 'react-native-onyx';
 import useArchivedReportsIDSet from '@hooks/useArchivedReportsIDSet';
 import useCurrentUserPersonalDetails from '@hooks/useCurrentUserPersonalDetails';
@@ -123,8 +123,12 @@ function useReconcileSelectionWithData({
     archivedReportsIDSet,
     outstandingReportsByPolicyID,
 }: ReconcileSelectionParams) {
-    const {selectedTransactions, areAllMatchingItemsSelected} = useSearchSelectionContext();
+    const {selectedTransactions, areAllMatchingItemsSelected, excludedTransactionsFromSelectAll} = useSearchSelectionContext();
     const {applySelection} = useSearchSelectionActions();
+    const applySelectionRef = useRef(applySelection);
+    applySelectionRef.current = applySelection;
+    const excludedTransactionsFromSelectAllRef = useRef(excludedTransactionsFromSelectAll);
+    excludedTransactionsFromSelectAllRef.current = excludedTransactionsFromSelectAll;
 
     useEffect(() => {
         if (!isFocused) {
@@ -134,6 +138,15 @@ function useReconcileSelectionWithData({
         if (type === CONST.SEARCH.DATA_TYPES.CHAT) {
             return;
         }
+
+        const excludedFromSelectAll = excludedTransactionsFromSelectAllRef.current ?? {};
+
+        // "Select all matching" tracks selection via areAllMatchingItemsSelected + exclusions. Rebuilding
+        // selectedTransactions here loops with applySelection's unstable identity (see issue #89588). Row UI uses useRowSelection.
+        if (areAllMatchingItemsSelected) {
+            return;
+        }
+
         const newTransactionList: SelectedTransactions = {};
         if (areItemsGrouped) {
             for (const transactionGroup of filteredData) {
@@ -150,7 +163,7 @@ function useReconcileSelectionWithData({
                         const [, emptyReportSelection] = mapEmptyReportToSelectedEntry(transactionGroup);
                         newTransactionList[reportKey] = {
                             ...emptyReportSelection,
-                            isSelected: areAllMatchingItemsSelected || selectedTransactions[reportKey]?.isSelected,
+                            isSelected: (areAllMatchingItemsSelected && !excludedFromSelectAll[reportKey]) || selectedTransactions[reportKey]?.isSelected,
                         };
                     }
                     continue;
@@ -168,6 +181,9 @@ function useReconcileSelectionWithData({
 
                 for (const transactionItem of transactionGroup.transactions) {
                     const listKey = transactionItem.keyForList ?? transactionItem.transactionID;
+                    if (excludedFromSelectAll[listKey] || excludedFromSelectAll[transactionItem.transactionID]) {
+                        continue;
+                    }
                     const isSelected = listKey in selectedTransactions || transactionItem.transactionID in selectedTransactions;
 
                     // Include transaction if: already individually selected, part of select-all, or group-level propagation (expense report / empty group expanded)
@@ -201,7 +217,7 @@ function useReconcileSelectionWithData({
 
                     newTransactionList[listKey] = {
                         ...baseEntry,
-                        isSelected: areAllMatchingItemsSelected || !!previousSelection?.isSelected || propagateSelectionToAllRows,
+                        isSelected: (areAllMatchingItemsSelected && !excludedFromSelectAll[listKey]) || !!previousSelection?.isSelected || propagateSelectionToAllRows,
                         canReject: currentUserEmail && transactionItem.report ? canRejectReportAction(currentUserEmail, transactionItem.report) : false,
                         policyID: transactionItem.report?.policyID,
                         groupKey: previousSelection?.groupKey ?? (propagateSelectionToAllRows && !isExpenseReportType ? reportKey : undefined),
@@ -214,6 +230,9 @@ function useReconcileSelectionWithData({
                     continue;
                 }
                 const listKey = transactionItem.keyForList ?? transactionItem.transactionID;
+                if (excludedFromSelectAll[listKey] || excludedFromSelectAll[transactionItem.transactionID]) {
+                    continue;
+                }
                 if (!(listKey in selectedTransactions) && !(transactionItem.transactionID in selectedTransactions) && !areAllMatchingItemsSelected) {
                     continue;
                 }
@@ -239,7 +258,7 @@ function useReconcileSelectionWithData({
 
                 newTransactionList[listKey] = {
                     ...baseEntry,
-                    isSelected: areAllMatchingItemsSelected || !!flatPreviousSelection?.isSelected,
+                    isSelected: (areAllMatchingItemsSelected && !excludedFromSelectAll[listKey]) || !!flatPreviousSelection?.isSelected,
                     canReject: currentUserEmail && transactionItem.report ? canRejectReportAction(currentUserEmail, transactionItem.report) : false,
                     policyID: transactionItem.report?.policyID,
                 };
@@ -261,17 +280,17 @@ function useReconcileSelectionWithData({
         // reconcile is in flight (this replaces the former `isRefreshingSelection` guard). `filteredData` is passed
         // so `selectedReports` is derived atomically and a stale `useSyncSelectedReports` derivation can't briefly
         // clear it (which would close screens like SearchChangeApproverPage that dismiss on empty `selectedReports`).
-        applySelection(() => newTransactionList, {data: filteredData});
-        // `selectedTransactions` is intentionally omitted from the deps and read from closure instead (see the
-        // hook doc above): including it would re-run this reconcile on every checkbox press. We only want it to
-        // run when the underlying data, focus, or select-all state changes.
+        applySelectionRef.current(() => newTransactionList, {data: filteredData});
+        // `selectedTransactions` and `applySelection` are intentionally omitted from the deps and read from
+        // closure/ref instead (see the hook doc above): including them would re-run this reconcile on every
+        // checkbox press or provider re-render and can loop until React aborts (issue #89588).
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [filteredData, applySelection, areAllMatchingItemsSelected, isFocused, outstandingReportsByPolicyID, isExpenseReportType]);
+    }, [filteredData, areAllMatchingItemsSelected, isFocused, outstandingReportsByPolicyID, isExpenseReportType]);
 }
 
 /** Turn mobile selection mode off once nothing is selected and the selection asked to exit the mode. */
 function useTurnOffSelectionModeWhenEmpty({isFocused, isMobileSelectionModeEnabled}: {isFocused: boolean; isMobileSelectionModeEnabled: boolean}) {
-    const {selectedTransactions, shouldTurnOffSelectionMode} = useSearchSelectionContext();
+    const {selectedTransactions, shouldTurnOffSelectionMode, areAllMatchingItemsSelected} = useSearchSelectionContext();
 
     useEffect(() => {
         if (!isFocused) {
@@ -279,7 +298,7 @@ function useTurnOffSelectionModeWhenEmpty({isFocused, isMobileSelectionModeEnabl
         }
 
         const selectedKeys = Object.keys(selectedTransactions).filter((transactionKey) => selectedTransactions[transactionKey]);
-        if (selectedKeys.length === 0 && isMobileSelectionModeEnabled && shouldTurnOffSelectionMode) {
+        if (selectedKeys.length === 0 && !areAllMatchingItemsSelected && isMobileSelectionModeEnabled && shouldTurnOffSelectionMode) {
             turnOffMobileSelectionMode();
         }
 
@@ -299,7 +318,7 @@ function useSyncMobileSelectionModeWithScreenSize({
     isMobileSelectionModeEnabled: boolean;
     isSearchResultsEmpty: boolean;
 }) {
-    const {selectedTransactions} = useSearchSelectionContext();
+    const {selectedTransactions, areAllMatchingItemsSelected} = useSearchSelectionContext();
     // eslint-disable-next-line rulesdir/prefer-shouldUseNarrowLayout-instead-of-isSmallScreenWidth
     const {isSmallScreenWidth} = useResponsiveLayout();
 
@@ -309,13 +328,14 @@ function useSyncMobileSelectionModeWithScreenSize({
         }
 
         const selectedKeys = Object.keys(selectedTransactions).filter((transactionKey) => selectedTransactions[transactionKey]);
+        const hasSelection = selectedKeys.length > 0 || areAllMatchingItemsSelected;
         if (!isSmallScreenWidth) {
-            if (selectedKeys.length === 0 && isMobileSelectionModeEnabled) {
+            if (!hasSelection && isMobileSelectionModeEnabled) {
                 turnOffMobileSelectionMode();
             }
             return;
         }
-        if (selectedKeys.length > 0 && !isMobileSelectionModeEnabled && !isSearchResultsEmpty) {
+        if (hasSelection && !isMobileSelectionModeEnabled && !isSearchResultsEmpty) {
             turnOnMobileSelectionMode();
         }
 
@@ -345,6 +365,7 @@ function SearchWriteActionsProvider({
     const archivedReportsIDSet = useArchivedReportsIDSet();
     const [outstandingReportsByPolicyID] = useOnyx(ONYXKEYS.DERIVED.OUTSTANDING_REPORTS_BY_POLICY_ID);
     const {applySelection} = useSearchSelectionActions();
+    const {areAllMatchingItemsSelected} = useSearchSelectionContext();
 
     const searchResultsData = searchResults?.data;
     const currentUserEmail = email ?? '';
@@ -359,6 +380,18 @@ function SearchWriteActionsProvider({
             if (!item.keyForList || isTransactionPendingDelete(item)) {
                 return;
             }
+
+            if (areAllMatchingItemsSelected) {
+                applySelection(
+                    (currentSelectedTransactions) => {
+                        const {[item.keyForList]: omittedTransaction, ...remainingTransactions} = currentSelectedTransactions;
+                        return remainingTransactions;
+                    },
+                    {toggleExcludedFromSelectAll: item.keyForList, data: filteredData},
+                );
+                return;
+            }
+
             applySelection(
                 (selectedTransactions) => {
                     const itemTransaction = transactions?.[`${ONYXKEYS.COLLECTION.TRANSACTION}${item.transactionID}`] as OnyxEntry<Transaction>;
@@ -457,6 +490,11 @@ function SearchWriteActionsProvider({
     };
 
     const toggleAll: SearchRowSelectionActionsValue['toggleAll'] = () => {
+        if (areAllMatchingItemsSelected) {
+            applySelection(() => ({}), {data: filteredData, resetSelectAllMatching: true});
+            return;
+        }
+
         applySelection(
             (selectedTransactions) => {
                 if (Object.keys(selectedTransactions).length > 0) {

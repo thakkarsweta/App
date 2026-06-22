@@ -12,6 +12,8 @@ const baseSelectionContext = {
     shouldTurnOffSelectionMode: false,
     hasSelectedTransactions: false,
     areAllMatchingItemsSelected: false,
+    excludedTransactionsFromSelectAll: {},
+    selectionDisplayCount: 0,
 } satisfies Omit<SearchSelectionContextValue, 'selectedTransactions'>;
 
 const noopSelectionActions: SearchSelectionActionsValue = {
@@ -70,7 +72,8 @@ function renderRowSelection({
 }
 
 function renderSelectionCounts(selectedTransactions: SelectedTransactions): {selected: number} {
-    return renderWithSelection(() => useSelectionCounts(), {...baseSelectionContext, selectedTransactions});
+    const selectionDisplayCount = Object.values(selectedTransactions).filter((transaction) => transaction.isSelected).length;
+    return renderWithSelection(() => useSelectionCounts(), {...baseSelectionContext, selectedTransactions, selectionDisplayCount});
 }
 
 describe('useRowSelection', () => {

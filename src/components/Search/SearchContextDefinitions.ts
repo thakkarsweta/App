@@ -50,6 +50,8 @@ const defaultSearchSelectionContext: SearchSelectionContextValue = {
     shouldTurnOffSelectionMode: false,
     hasSelectedTransactions: false,
     areAllMatchingItemsSelected: false,
+    excludedTransactionsFromSelectAll: {},
+    selectionDisplayCount: 0,
 };
 
 const defaultSearchSelectionActions: SearchSelectionActionsValue = {

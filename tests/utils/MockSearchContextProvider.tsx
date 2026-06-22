@@ -53,6 +53,8 @@ function splitState(value: SearchStateContextValue): {
             shouldTurnOffSelectionMode: value.shouldTurnOffSelectionMode,
             hasSelectedTransactions: value.hasSelectedTransactions,
             areAllMatchingItemsSelected: value.areAllMatchingItemsSelected,
+            excludedTransactionsFromSelectAll: value.excludedTransactionsFromSelectAll ?? {},
+            selectionDisplayCount: value.selectionDisplayCount ?? 0,
         },
     };
 }

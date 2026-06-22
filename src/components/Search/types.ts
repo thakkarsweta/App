@@ -213,6 +213,10 @@ type SearchSelectionContextValue = {
     /** True when at least one transaction is selected. */
     hasSelectedTransactions: boolean;
     areAllMatchingItemsSelected: boolean;
+    /** Transaction keys explicitly unchecked while "select all matching" is active. */
+    excludedTransactionsFromSelectAll: Record<string, true>;
+    /** Count to show in the bulk-actions bar and footer while selection is active. */
+    selectionDisplayCount: number;
 };
 
 type SearchSelectionActionsValue = {
@@ -231,7 +235,10 @@ type SearchSelectionActionsValue = {
      * thus re-rendering on — selection state. Passing `data` derives `selectedReports` in the same commit; passing
      * `totalSelectableItemsCount` unchecks "select all matching" when the new selection no longer covers every item.
      */
-    applySelection: (updater: (previousSelectedTransactions: SelectedTransactions) => SelectedTransactions, options?: {data?: SearchData; totalSelectableItemsCount?: number}) => void;
+    applySelection: (
+        updater: (previousSelectedTransactions: SelectedTransactions) => SelectedTransactions,
+        options?: {data?: SearchData; totalSelectableItemsCount?: number; toggleExcludedFromSelectAll?: string; resetSelectAllMatching?: boolean},
+    ) => void;
     setSelectedReports: (reports: SelectedReports[]) => void;
     setCurrentSelectedTransactionReportID: (reportID: string | undefined) => void;
     /** If you want to clear `selectedTransactionIDs`, pass `true` as the first argument */
@@ -240,7 +247,7 @@ type SearchSelectionActionsValue = {
         (clearIDs: true, unused?: undefined): void;
     };
     removeTransaction: (transactionID: string | undefined) => void;
-    selectAllMatchingItems: (on: boolean) => void;
+    selectAllMatchingItems: (shouldSelectAll: boolean, options?: {totalCount?: number | null; visibleSelectableCount?: number}) => void;
 };
 
 /** The displayed (filtered, grouped) search rows. A homogeneous list of one of the four list-item kinds. */

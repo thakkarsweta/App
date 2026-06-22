@@ -1,5 +1,5 @@
 import {isUserValidatedSelector} from '@selectors/Account';
-import React, {useContext, useMemo, useRef} from 'react';
+import React, {useContext, useRef} from 'react';
 import {View} from 'react-native';
 import ButtonWithDropdownMenu from '@components/ButtonWithDropdownMenu';
 import DecisionModal from '@components/DecisionModal';
@@ -41,7 +41,7 @@ function SearchBulkActionsButton({queryJSON}: SearchBulkActionsButtonProps) {
     // We need isSmallScreenWidth (not just shouldUseNarrowLayout) because DecisionModal requires it for correct modal type
     // eslint-disable-next-line rulesdir/prefer-shouldUseNarrowLayout-instead-of-isSmallScreenWidth
     const {shouldUseNarrowLayout, isSmallScreenWidth} = useResponsiveLayout();
-    const {selectedTransactions, selectedReports, areAllMatchingItemsSelected} = useSearchSelectionContext();
+    const {selectedTransactions, selectedReports, areAllMatchingItemsSelected, excludedTransactionsFromSelectAll, selectionDisplayCount} = useSearchSelectionContext();
     const kycWallRef = useContext(KYCWallContext);
     const {isAccountLocked} = useLockedAccountState();
     const {showLockedAccountModal} = useLockedAccountActions();
@@ -92,33 +92,14 @@ function SearchBulkActionsButton({queryJSON}: SearchBulkActionsButtonProps) {
     const pendingPaymentAdditionalDataRef = useRef<BulkPaySelectionData | undefined>(undefined);
 
     const selectedTransactionsKeys = Object.keys(selectedTransactions ?? {});
-    const isExpenseReportType = queryJSON.type === CONST.SEARCH.DATA_TYPES.EXPENSE_REPORT;
 
     const popoverUseScrollView = shouldPopoverUseScrollView(headerButtonsOptions);
-    const selectedItemsCount = useMemo(() => {
-        if (!selectedTransactions) {
-            return 0;
-        }
 
-        if (isExpenseReportType) {
-            const reportIDs = new Set(
-                Object.values(selectedTransactions)
-                    .map((transaction) => transaction?.reportID)
-                    .filter((reportID): reportID is string => !!reportID),
-            );
-            return reportIDs.size;
-        }
-
-        return selectedTransactionsKeys.reduce((count, key) => {
-            if (key.startsWith(CONST.SEARCH.GROUP_PREFIX)) {
-                const group = searchData?.[key as keyof typeof searchData] as {count?: number} | undefined;
-                return count + (group?.count ?? 0);
-            }
-            return count + 1;
-        }, 0);
-    }, [selectedTransactions, selectedTransactionsKeys, isExpenseReportType, searchData]);
-
-    const selectionButtonText = areAllMatchingItemsSelected ? translate('search.exportAll.allMatchingItemsSelected') : translate('workspace.common.selected', {count: selectedItemsCount});
+    const excludedFromSelectAllCount = Object.keys(excludedTransactionsFromSelectAll ?? {}).length;
+    const selectionButtonText =
+        areAllMatchingItemsSelected && excludedFromSelectAllCount === 0
+            ? translate('search.exportAll.allMatchingItemsSelected')
+            : translate('workspace.common.selected', {count: selectionDisplayCount});
 
     return (
         <>

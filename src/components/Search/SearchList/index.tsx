@@ -214,7 +214,7 @@ function SearchList({
     const styles = useThemeStyles();
     const expensifyIcons = useMemoizedLazyExpensifyIcons(['CheckSquare']);
     const {toggle, toggleAll} = useSearchRowSelectionActions();
-    const {selectedTransactions} = useSearchSelectionContext();
+    const {selectedTransactions, areAllMatchingItemsSelected, excludedTransactionsFromSelectAll} = useSearchSelectionContext();
 
     const {groupBy, type} = queryJSON;
     const flattenedItems = useMemo(() => {
@@ -234,6 +234,31 @@ function SearchList({
     }, [data]);
 
     const selectedItemsLength = useMemo(() => {
+        if (areAllMatchingItemsSelected) {
+            const excludedFromSelectAll = excludedTransactionsFromSelectAll ?? {};
+            const selectedTransactionsCount = flattenedItems.reduce((acc, item) => {
+                if ('pendingAction' in item && item.pendingAction === CONST.RED_BRICK_ROAD_PENDING_ACTION.DELETE) {
+                    return acc;
+                }
+                const isTransactionSelected = !!(item?.keyForList && !excludedFromSelectAll[item.keyForList]);
+                return acc + (isTransactionSelected ? 1 : 0);
+            }, 0);
+
+            if (isTransactionGroupListItemArray(data)) {
+                const selectedEmptyReports = emptyReports.reduce((acc, item) => {
+                    if (item.pendingAction === CONST.RED_BRICK_ROAD_PENDING_ACTION.DELETE) {
+                        return acc;
+                    }
+                    const isEmptyReportSelected = !!(item.keyForList && !excludedFromSelectAll[item.keyForList]);
+                    return acc + (isEmptyReportSelected ? 1 : 0);
+                }, 0);
+
+                return selectedEmptyReports + selectedTransactionsCount;
+            }
+
+            return selectedTransactionsCount;
+        }
+
         const selectedTransactionsCount = flattenedItems.reduce((acc, item) => {
             const isTransactionSelected = !!(item?.keyForList && selectedTransactions[item.keyForList]?.isSelected);
             return acc + (isTransactionSelected ? 1 : 0);
@@ -249,7 +274,7 @@ function SearchList({
         }
 
         return selectedTransactionsCount;
-    }, [flattenedItems, data, emptyReports, selectedTransactions]);
+    }, [flattenedItems, data, emptyReports, selectedTransactions, areAllMatchingItemsSelected, excludedTransactionsFromSelectAll]);
 
     const totalItems = useMemo(() => {
         if (isTransactionGroupListItemArray(data)) {

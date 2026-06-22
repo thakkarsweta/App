@@ -15,7 +15,7 @@ type SearchSelectionFooterProps = {
 // Self-subscribing footer leaf. Owns the `selectedTransactions` read so a checkbox press re-renders only this
 // footer — not SearchPage and the <Search> list it contains.
 function SearchSelectionFooter({searchResults}: SearchSelectionFooterProps) {
-    const {selectedTransactions, areAllMatchingItemsSelected} = useSearchSelectionContext();
+    const {selectedTransactions, areAllMatchingItemsSelected, selectionDisplayCount} = useSearchSelectionContext();
     const {currentSearchResults} = useSearchResultsContext();
     const {currentSearchKey, currentSearchQueryJSON} = useSearchQueryContext();
     const shouldAllowFooterTotals = useSearchShouldCalculateTotals(currentSearchKey, currentSearchQueryJSON?.hash, true);
@@ -31,19 +31,21 @@ function SearchSelectionFooter({searchResults}: SearchSelectionFooterProps) {
     const shouldUseClientTotal = !metadata?.count || (selectedTransactionsKeys.length > 0 && !areAllMatchingItemsSelected);
     const selectedTransactionItems = Object.values(selectedTransactions);
     const currency = metadata?.currency ?? selectedTransactionItems.at(0)?.groupCurrency ?? selectedTransactionItems.at(0)?.currency;
-    const count = shouldUseClientTotal
-        ? selectedTransactionsKeys.reduce((acc, key) => {
-              if (isGroupEntry(key)) {
-                  const group = currentSearchResults?.data?.[key];
-                  return acc + (group?.count ?? 0);
-              }
-              const item = selectedTransactions[key];
-              if (item.action === CONST.SEARCH.ACTION_TYPES.VIEW && key === item.reportID) {
-                  return acc;
-              }
-              return acc + 1;
-          }, 0)
-        : metadata?.count;
+    const count = areAllMatchingItemsSelected
+        ? selectionDisplayCount
+        : shouldUseClientTotal
+          ? selectedTransactionsKeys.reduce((acc, key) => {
+                if (isGroupEntry(key)) {
+                    const group = currentSearchResults?.data?.[key];
+                    return acc + (group?.count ?? 0);
+                }
+                const item = selectedTransactions[key];
+                if (item.action === CONST.SEARCH.ACTION_TYPES.VIEW && key === item.reportID) {
+                    return acc;
+                }
+                return acc + 1;
+            }, 0)
+          : metadata?.count;
     const total = shouldUseClientTotal ? selectedTransactionItems.reduce((acc, transaction) => acc - (transaction.groupAmount ?? -Math.abs(transaction.amount)), 0) : metadata?.total;
 
     return (

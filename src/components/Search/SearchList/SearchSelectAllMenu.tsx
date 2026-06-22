@@ -4,7 +4,7 @@ import Checkbox from '@components/Checkbox';
 import PopoverMenu from '@components/PopoverMenu';
 import type {PopoverMenuItem} from '@components/PopoverMenu';
 import {PressableWithFeedback} from '@components/Pressable';
-import {useSearchResultsContext, useSearchSelectionActions} from '@components/Search/SearchContext';
+import {useSearchResultsContext, useSearchSelectionActions, useSearchSelectionContext} from '@components/Search/SearchContext';
 import Text from '@components/Text';
 import {useMemoizedLazyExpensifyIcons} from '@hooks/useLazyAsset';
 import useLocalize from '@hooks/useLocalize';
@@ -26,13 +26,14 @@ function SearchSelectAllMenu({isSelectAllChecked, isIndeterminate, selectedItems
     const {translate} = useLocalize();
     const expensifyIcons = useMemoizedLazyExpensifyIcons(['Checkmark', 'CheckSquare']);
     const {currentSearchResults} = useSearchResultsContext();
+    const {areAllMatchingItemsSelected} = useSearchSelectionContext();
     const {selectAllMatchingItems} = useSearchSelectionActions();
     const selectAllAnchorRef = useRef<View>(null);
     const [isSelectAllMenuVisible, setIsSelectAllMenuVisible] = useState(false);
     const [selectAllMenuPosition, setSelectAllMenuPosition] = useState({horizontal: 0, vertical: 0});
     const {calculatePopoverPosition} = usePopoverPosition();
 
-    const shouldOpenSelectAllMenu = selectedItemsLength === 0 && !!currentSearchResults?.search?.hasMoreResults;
+    const shouldOpenSelectAllMenu = !areAllMatchingItemsSelected && selectedItemsLength === 0 && !!currentSearchResults?.search?.hasMoreResults;
 
     const closeSelectAllMenu = useCallback(() => setIsSelectAllMenuVisible(false), []);
 
@@ -43,8 +44,11 @@ function SearchSelectAllMenu({isSelectAllChecked, isIndeterminate, selectedItems
 
     const selectAllMatching = useCallback(() => {
         closeSelectAllMenu();
-        selectAllMatchingItems(true);
-    }, [closeSelectAllMenu, selectAllMatchingItems]);
+        selectAllMatchingItems(true, {
+            totalCount: currentSearchResults?.search?.count,
+            visibleSelectableCount: totalItems,
+        });
+    }, [closeSelectAllMenu, currentSearchResults?.search?.count, selectAllMatchingItems, totalItems]);
 
     const selectAllMenuItems = useMemo(
         (): PopoverMenuItem[] => [
