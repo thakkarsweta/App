@@ -37,6 +37,7 @@ import type {BaseVacationDelegate} from '@src/types/onyx/VacationDelegate';
 import type PrefixedRecord from '@src/types/utils/PrefixedRecord';
 import type {ScimTokenWithState} from './ScimToken/ScimTokenUtils';
 import {ScimTokenState} from './ScimToken/ScimTokenUtils';
+import {requestSetVacationDelegate} from './VacationDelegate';
 
 /**
  * Fetches a validation code that the user is supposed to put in the domain's DNS records to verify it
@@ -1325,9 +1326,9 @@ function setDomainVacationDelegate(domainAccountID: number, domainMemberAccountI
         domainAccountID,
     };
 
-    // We don't use the side effect here but `SetVacationDelegate` command is declared as side effect command
-    // eslint-disable-next-line rulesdir/no-api-side-effects-method
-    API.makeRequestWithSideEffects(SIDE_EFFECT_REQUEST_COMMANDS.SET_VACATION_DELEGATE, parameters, {optimisticData, successData, failureData});
+    const onyxData = {optimisticData, successData, failureData};
+
+    requestSetVacationDelegate(parameters, onyxData);
 }
 
 function deleteDomainVacationDelegate(domainAccountID: number, domainMemberAccountID: number, vacationer: string, vacationDelegate: BaseVacationDelegate) {

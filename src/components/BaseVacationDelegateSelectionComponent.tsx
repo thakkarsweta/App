@@ -2,6 +2,7 @@ import React, {useEffect} from 'react';
 import {View} from 'react-native';
 import {useMemoizedLazyExpensifyIcons} from '@hooks/useLazyAsset';
 import useLocalize from '@hooks/useLocalize';
+import useNetwork from '@hooks/useNetwork';
 import useOnyx from '@hooks/useOnyx';
 import usePersonalDetailSearchSelector from '@hooks/usePersonalDetailSearchSelector';
 import useThemeStyles from '@hooks/useThemeStyles';
@@ -13,7 +14,6 @@ import CONST from '@src/CONST';
 import ONYXKEYS from '@src/ONYXKEYS';
 import type {Participant} from '@src/types/onyx/IOU';
 import type {BaseVacationDelegate} from '@src/types/onyx/VacationDelegate';
-import FullPageOfflineBlockingView from './BlockingViews/FullPageOfflineBlockingView';
 import DelegatorList from './DelegatorList';
 import HeaderWithBackButton from './HeaderWithBackButton';
 import UserListItem from './SelectionList/ListItem/UserListItem';
@@ -52,7 +52,9 @@ function BaseVacationDelegateSelectionComponent({
     includeCurrentUser = true,
 }: BaseVacationDelegateSelectionComponentProps) {
     const {translate} = useLocalize();
+    const {isOffline} = useNetwork();
     const styles = useThemeStyles();
+    const offlineMessage = isOffline ? `${translate('common.youAppearToBeOffline')} ${translate('search.resultsAreLimited')}` : '';
     const icons = useMemoizedLazyExpensifyIcons(['FallbackAvatar']);
     const [countryCode = CONST.DEFAULT_COUNTRY_CODE] = useOnyx(ONYXKEYS.COUNTRY_CODE);
     const [isSearchingForReports] = useOnyx(ONYXKEYS.RAM_ONLY_IS_SEARCHING_FOR_REPORTS);
@@ -168,6 +170,7 @@ function BaseVacationDelegateSelectionComponent({
         onChangeText: setSearchTerm,
         label: translate('selectionList.nameEmailOrPhoneNumber'),
         headerMessage,
+        hint: offlineMessage,
     };
 
     return (
@@ -176,34 +179,32 @@ function BaseVacationDelegateSelectionComponent({
                 title={headerTitle}
                 onBackButtonPress={onBackButtonPress}
             />
-            <FullPageOfflineBlockingView>
-                {hasActiveDelegations ? (
-                    <View style={styles.mt6}>
-                        <DelegatorList
-                            delegators={vacationDelegate?.delegatorFor}
-                            message={cannotSetDelegateMessage}
-                        />
-                    </View>
-                ) : (
-                    <View style={[styles.flex1, styles.w100, styles.pRelative]}>
-                        <SelectionList
-                            sections={areOptionsInitialized ? sections : []}
-                            ListItem={UserListItem}
-                            onSelectRow={(item) => {
-                                // Clear search to prevent "No results found" after selection
-                                setSearchTerm('');
+            {hasActiveDelegations ? (
+                <View style={styles.mt6}>
+                    <DelegatorList
+                        delegators={vacationDelegate?.delegatorFor}
+                        message={cannotSetDelegateMessage}
+                    />
+                </View>
+            ) : (
+                <View style={[styles.flex1, styles.w100, styles.pRelative]}>
+                    <SelectionList
+                        sections={areOptionsInitialized ? sections : []}
+                        ListItem={UserListItem}
+                        onSelectRow={(item) => {
+                            // Clear search to prevent "No results found" after selection
+                            setSearchTerm('');
 
-                                onSelectRow(item);
-                            }}
-                            textInputOptions={textInputOptions}
-                            shouldShowLoadingPlaceholder={!areOptionsInitialized}
-                            isLoadingNewOptions={!!isSearchingForReports}
-                            shouldSingleExecuteRowSelect
-                            shouldShowTextInput
-                        />
-                    </View>
-                )}
-            </FullPageOfflineBlockingView>
+                            onSelectRow(item);
+                        }}
+                        textInputOptions={textInputOptions}
+                        shouldShowLoadingPlaceholder={!areOptionsInitialized}
+                        isLoadingNewOptions={!!isSearchingForReports}
+                        shouldSingleExecuteRowSelect
+                        shouldShowTextInput
+                    />
+                </View>
+            )}
         </>
     );
 }

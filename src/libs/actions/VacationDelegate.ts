@@ -1,13 +1,29 @@
 import Onyx from 'react-native-onyx';
-import type {OnyxUpdate} from 'react-native-onyx';
+import type {OnyxKey, OnyxUpdate} from 'react-native-onyx';
 import * as API from '@libs/API';
 import type {SetVacationDelegateParams} from '@libs/API/parameters';
 import {SIDE_EFFECT_REQUEST_COMMANDS, WRITE_COMMANDS} from '@libs/API/types';
 import * as ErrorUtils from '@libs/ErrorUtils';
+import {getIsOffline} from '@libs/NetworkState';
 import CONST from '@src/CONST';
 import ONYXKEYS from '@src/ONYXKEYS';
 import type {VacationDelegate} from '@src/types/onyx';
+import type {OnyxData} from '@src/types/onyx/Request';
 import {isEmptyObject} from '@src/types/utils/EmptyObject';
+
+function writeSetVacationDelegate<TKey extends OnyxKey>(parameters: SetVacationDelegateParams, onyxData: OnyxData<TKey>) {
+    return API.write(WRITE_COMMANDS.SET_VACATION_DELEGATE, parameters, onyxData);
+}
+
+function setVacationDelegateWithSideEffects<TKey extends OnyxKey>(parameters: SetVacationDelegateParams, onyxData: OnyxData<TKey>) {
+    // We need to read the API response for showing a warning if there is a policy diff warning.
+    // eslint-disable-next-line rulesdir/no-api-side-effects-method
+    return API.makeRequestWithSideEffects(SIDE_EFFECT_REQUEST_COMMANDS.SET_VACATION_DELEGATE, parameters, onyxData);
+}
+
+function requestSetVacationDelegate<TKey extends OnyxKey>(parameters: SetVacationDelegateParams, onyxData: OnyxData<TKey>) {
+    return getIsOffline() ? writeSetVacationDelegate(parameters, onyxData) : setVacationDelegateWithSideEffects(parameters, onyxData);
+}
 
 function setVacationDelegate(creator: string, delegate: string, shouldOverridePolicyDiffWarning = false, currentDelegate?: string) {
     const optimisticData: Array<OnyxUpdate<typeof ONYXKEYS.NVP_PRIVATE_VACATION_DELEGATE>> = [
@@ -52,9 +68,9 @@ function setVacationDelegate(creator: string, delegate: string, shouldOverridePo
         overridePolicyDiffWarning: shouldOverridePolicyDiffWarning,
     };
 
-    // We need to read the API response for showing a warning if there is a policy diff warning.
-    // eslint-disable-next-line rulesdir/no-api-side-effects-method
-    return API.makeRequestWithSideEffects(SIDE_EFFECT_REQUEST_COMMANDS.SET_VACATION_DELEGATE, parameters, {optimisticData, successData, failureData});
+    const onyxData = {optimisticData, successData, failureData};
+
+    return requestSetVacationDelegate(parameters, onyxData);
 }
 
 function deleteVacationDelegate(vacationDelegate?: VacationDelegate) {
@@ -112,4 +128,4 @@ function clearVacationDelegateError(previousDelegate?: string) {
     });
 }
 
-export {setVacationDelegate, deleteVacationDelegate, clearVacationDelegateError};
+export {setVacationDelegate, deleteVacationDelegate, clearVacationDelegateError, requestSetVacationDelegate};
