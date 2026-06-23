@@ -1,5 +1,5 @@
 /* eslint-disable rulesdir/no-negated-variables */
-import {useIsFocused} from '@react-navigation/native';
+import {useIsFocused, useRoute} from '@react-navigation/native';
 import React, {useEffect} from 'react';
 import type {OnyxCollection, OnyxEntry} from 'react-native-onyx';
 import type {FullPageNotFoundViewProps} from '@components/BlockingViews/FullPageNotFoundView';
@@ -173,6 +173,9 @@ function AccessOrNotFoundWrapper({
     const pendingField = featureName ? policy?.pendingFields?.[featureName] : undefined;
     const isFocused = useIsFocused();
     const isWorkspacesTabFocused = useIsWorkspacesTabFocused();
+    const route = useRoute();
+    const backTo = route.params && typeof route.params === 'object' && 'backTo' in route.params && typeof route.params.backTo === 'string' ? route.params.backTo : undefined;
+    const isQuickSettingsTagsFlow = featureName === CONST.POLICY.MORE_FEATURES.ARE_TAGS_ENABLED && !!backTo;
 
     useEffect(() => {
         if (!isPolicyIDInRoute || !isEmptyObject(policy)) {
@@ -223,6 +226,10 @@ function AccessOrNotFoundWrapper({
 
         // When a workspace feature linked to the current page is disabled we will navigate to the More Features page.
         Navigation.setNavigationActionToMicrotaskQueue(() => {
+            if (isQuickSettingsTagsFlow) {
+                Navigation.goBack(backTo);
+                return;
+            }
             Navigation.goBack(ROUTES.WORKSPACE_MORE_FEATURES.getRoute(policyID));
         });
         // We don't need to run the effect on policyID change as we only use it to get the route to navigate to.

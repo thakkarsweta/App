@@ -14,12 +14,13 @@ type DynamicSuffixMatch = {
 
 /**
  * Tries to match a candidate suffix against a list of compiled parametric patterns.
- * Returns the first match with extracted path params, or undefined.
+ * Returns all matches with extracted path params.
  *
  * @private - Internal helper. Do not export or use outside this file.
  */
-function tryMatchParametric(candidate: string, candidateSegmentCount: number, patterns: CompiledEntry[]): DynamicSuffixMatch | undefined {
+function tryMatchAllParametric(candidate: string, candidateSegmentCount: number, patterns: CompiledEntry[]): DynamicSuffixMatch[] {
     const normalized = candidate.endsWith('/') ? candidate : `${candidate}/`;
+    const results: DynamicSuffixMatch[] = [];
 
     for (const {compiled} of patterns) {
         if (candidateSegmentCount < compiled.minSegments || candidateSegmentCount > compiled.maxSegments) {
@@ -41,10 +42,10 @@ function tryMatchParametric(candidate: string, candidateSegmentCount: number, pa
                 pathParams[name] = value;
             }
         }
-        return {pattern: compiled.pattern, actualSuffix: candidate, pathParams};
+        results.push({pattern: compiled.pattern, actualSuffix: candidate, pathParams});
     }
 
-    return undefined;
+    return results;
 }
 
 /**
@@ -86,19 +87,23 @@ function findAllMatchingDynamicSuffixes(path = ''): DynamicSuffixMatch[] {
 
     // Phase 2: Strict parametric patterns - no optional params (longest to shortest)
     for (let i = 0; i < segments.length; i++) {
-        const match = tryMatchParametric(segments.slice(i).join('/'), segments.length - i, compiledStrictParametricDynamicRoutes);
-        if (match && !seenPatterns.has(match.pattern)) {
-            results.push(match);
-            seenPatterns.add(match.pattern);
+        const matches = tryMatchAllParametric(segments.slice(i).join('/'), segments.length - i, compiledStrictParametricDynamicRoutes);
+        for (const match of matches) {
+            if (!seenPatterns.has(match.pattern)) {
+                results.push(match);
+                seenPatterns.add(match.pattern);
+            }
         }
     }
 
     // Phase 3: Optional parametric patterns - has at least one :param? (longest to shortest)
     for (let i = 0; i < segments.length; i++) {
-        const match = tryMatchParametric(segments.slice(i).join('/'), segments.length - i, compiledOptionalParametricDynamicRoutes);
-        if (match && !seenPatterns.has(match.pattern)) {
-            results.push(match);
-            seenPatterns.add(match.pattern);
+        const matches = tryMatchAllParametric(segments.slice(i).join('/'), segments.length - i, compiledOptionalParametricDynamicRoutes);
+        for (const match of matches) {
+            if (!seenPatterns.has(match.pattern)) {
+                results.push(match);
+                seenPatterns.add(match.pattern);
+            }
         }
     }
 

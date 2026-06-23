@@ -367,7 +367,10 @@ function WorkspaceViewTagsPage({route}: WorkspaceViewTagsProps) {
 
         Navigation.navigate(
             isQuickSettingsFlow
-                ? createDynamicRoute(DYNAMIC_ROUTES.SETTINGS_TAGS_EDIT.getRoute(currentPolicyTag?.orderWeight ?? 0))
+                ? createDynamicRoute(
+                      DYNAMIC_ROUTES.SETTINGS_TAGS_EDIT.getRoute(currentPolicyTag?.orderWeight ?? 0),
+                      createDynamicRoute(DYNAMIC_ROUTES.SETTINGS_TAG_LIST_VIEW.getRoute(orderWeight), ROUTES.SETTINGS_TAGS_ROOT.getRoute(policyID)),
+                  )
                 : ROUTES.WORKSPACE_EDIT_TAGS.getRoute(route.params.policyID, currentPolicyTag?.orderWeight ?? 0, Navigation.getActiveRoute()),
         );
     };

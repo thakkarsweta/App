@@ -82,10 +82,11 @@ function WorkspaceTagsSettingsPage({route}: WorkspaceTagsSettingsPageProps) {
                         title={policyTagLists.at(0)?.name ?? ''}
                         description={translate(`workspace.tags.customTagName`)}
                         onPress={() => {
+                            const orderWeight = policyTagLists.at(0)?.orderWeight ?? 0;
                             Navigation.navigate(
                                 isQuickSettingsFlow
-                                    ? createDynamicRoute(DYNAMIC_ROUTES.SETTINGS_TAGS_EDIT.getRoute(policyTagLists.at(0)?.orderWeight ?? 0))
-                                    : ROUTES.WORKSPACE_EDIT_TAGS.getRoute(policyID, policyTagLists.at(0)?.orderWeight ?? 0),
+                                    ? createDynamicRoute(DYNAMIC_ROUTES.SETTINGS_TAGS_EDIT.getRoute(orderWeight), ROUTES.SETTINGS_TAGS_SETTINGS.getRoute(policyID, backTo))
+                                    : ROUTES.WORKSPACE_EDIT_TAGS.getRoute(policyID, orderWeight),
                             );
                         }}
                         shouldShowRightIcon
