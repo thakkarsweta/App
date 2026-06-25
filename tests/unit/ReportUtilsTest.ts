@@ -17709,6 +17709,46 @@ describe('ReportUtils', () => {
             const result = getTransactionSortValue(transaction, 'UNKNOWN_COLUMN' as typeof CONST.SEARCH.TABLE_COLUMNS.DATE, mockReport, mockPolicy);
             expect(result).toBe('');
         });
+
+        it('should return attendee count for ATTENDEES column', () => {
+            const transaction = createMockTransaction({
+                comment: {
+                    attendees: [
+                        {accountID: 1, displayName: 'User 1'},
+                        {accountID: 2, displayName: 'User 2'},
+                    ],
+                },
+            });
+            const result = getTransactionSortValue(transaction, CONST.SEARCH.TABLE_COLUMNS.ATTENDEES, mockReport, mockPolicy);
+            expect(result).toBe(2);
+        });
+
+        it('should return 0 for ATTENDEES column when there are no attendees', () => {
+            const transaction = createMockTransaction();
+            const result = getTransactionSortValue(transaction, CONST.SEARCH.TABLE_COLUMNS.ATTENDEES, mockReport, mockPolicy);
+            expect(result).toBe(0);
+        });
+
+        it('should return total per attendee for TOTAL_PER_ATTENDEE column', () => {
+            const transaction = createMockTransaction({
+                amount: -6000,
+                comment: {
+                    attendees: [
+                        {accountID: 1, displayName: 'User 1'},
+                        {accountID: 2, displayName: 'User 2'},
+                        {accountID: 3, displayName: 'User 3'},
+                    ],
+                },
+            });
+            const result = getTransactionSortValue(transaction, CONST.SEARCH.TABLE_COLUMNS.TOTAL_PER_ATTENDEE, mockReport, mockPolicy);
+            expect(result).toBe(2000);
+        });
+
+        it('should return 0 for TOTAL_PER_ATTENDEE column when there are no attendees', () => {
+            const transaction = createMockTransaction({amount: -6000});
+            const result = getTransactionSortValue(transaction, CONST.SEARCH.TABLE_COLUMNS.TOTAL_PER_ATTENDEE, mockReport, mockPolicy);
+            expect(result).toBe(0);
+        });
     });
 
     describe('isSortableColumnName', () => {
@@ -17723,6 +17763,8 @@ describe('ReportUtils', () => {
             expect(isSortableColumnName(CONST.SEARCH.TABLE_COLUMNS.REIMBURSABLE)).toBe(true);
             expect(isSortableColumnName(CONST.SEARCH.TABLE_COLUMNS.TAX_RATE)).toBe(true);
             expect(isSortableColumnName(CONST.SEARCH.TABLE_COLUMNS.CARD)).toBe(true);
+            expect(isSortableColumnName(CONST.SEARCH.TABLE_COLUMNS.ATTENDEES)).toBe(true);
+            expect(isSortableColumnName(CONST.SEARCH.TABLE_COLUMNS.TOTAL_PER_ATTENDEE)).toBe(true);
         });
 
         it('should return false for non-sortable columns', () => {
