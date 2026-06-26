@@ -47,7 +47,6 @@ import {
     isThread,
 } from '@libs/ReportUtils';
 import {isInvalidMerchantValue} from '@libs/ValidationUtils';
-import type {UpdateMoneyRequestDataKeys} from '@userActions/IOU/UpdateMoneyRequest';
 import type {IOURequestType, IOUType} from '@src/CONST';
 import CONST from '@src/CONST';
 import IntlStore from '@src/languages/IntlStore';
@@ -73,7 +72,7 @@ import type {
 import type {Attendee, DistanceExpenseType, Participant, SplitExpense} from '@src/types/onyx/IOU';
 import type {Errors, PendingAction} from '@src/types/onyx/OnyxCommon';
 import type {Unit} from '@src/types/onyx/Policy';
-import type {OnyxData} from '@src/types/onyx/Request';
+import type {AnyOnyxData} from '@src/types/onyx/Request';
 import type {
     Comment,
     Receipt,
@@ -2361,7 +2360,7 @@ function getValidDuplicateTransactionIDs(transactionID: string, transactionColle
  *
  */
 function removeTransactionFromDuplicateTransactionViolation(
-    onyxData: OnyxData<UpdateMoneyRequestDataKeys>,
+    onyxData: AnyOnyxData,
     transactionID: string,
     transactions: OnyxCollection<Transaction>,
     transactionViolations: OnyxCollection<TransactionViolations>,

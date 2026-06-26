@@ -56,6 +56,7 @@ import {
     isManualDistanceRequest,
     isOdometerDistanceRequest,
     isOnHold,
+    removeTransactionFromDuplicateTransactionViolation,
     shouldClearConvertedAmount,
     waypointHasValidAddress,
 } from '@libs/TransactionUtils';
@@ -869,6 +870,18 @@ function changeTransactionsReport({
         currentTransactionViolations[id] = allTransactionViolation?.[`${ONYXKEYS.COLLECTION.TRANSACTION_VIOLATIONS}${id}`] ?? [];
     }
 
+    const transactionCollection: OnyxCollection<Transaction> = {};
+    for (const movedTransaction of transactions) {
+        transactionCollection[`${ONYXKEYS.COLLECTION.TRANSACTION}${movedTransaction.transactionID}`] = movedTransaction;
+
+        const sourceReportID = movedTransaction.reportID;
+        if (sourceReportID && sourceReportID !== CONST.REPORT.UNREPORTED_REPORT_ID) {
+            for (const reportTransaction of getReportTransactions(sourceReportID)) {
+                transactionCollection[`${ONYXKEYS.COLLECTION.TRANSACTION}${reportTransaction.transactionID}`] = reportTransaction;
+            }
+        }
+    }
+
     const optimisticData: Array<
         OnyxUpdate<
             | typeof ONYXKEYS.COLLECTION.REPORT
@@ -1147,18 +1160,7 @@ function changeTransactionsReport({
 
         // Optimistically clear all violations for the transaction when moving to self DM report
         if (isUnreported) {
-            const duplicateTransactionIDs = currentTransactionViolations[transaction.transactionID]?.find((violation) => violation.name === CONST.VIOLATIONS.DUPLICATED_TRANSACTION)?.data
-                ?.duplicates;
-            if (duplicateTransactionIDs) {
-                for (const id of duplicateTransactionIDs) {
-                    const siblingViolations = allTransactionViolation?.[`${ONYXKEYS.COLLECTION.TRANSACTION_VIOLATIONS}${id}`] ?? [];
-                    optimisticData.push({
-                        onyxMethod: Onyx.METHOD.SET,
-                        key: `${ONYXKEYS.COLLECTION.TRANSACTION_VIOLATIONS}${id}`,
-                        value: siblingViolations.filter((violation) => violation.name !== CONST.VIOLATIONS.DUPLICATED_TRANSACTION),
-                    });
-                }
-            }
+            removeTransactionFromDuplicateTransactionViolation({optimisticData, successData, failureData}, transaction.transactionID, transactionCollection, allTransactionViolation ?? {});
             optimisticData.push({
                 onyxMethod: Onyx.METHOD.SET,
                 key: `${ONYXKEYS.COLLECTION.TRANSACTION_VIOLATIONS}${transaction.transactionID}`,

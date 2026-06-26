@@ -1247,6 +1247,78 @@ describe('Transaction', () => {
             expect(updatedViolations).toBeFalsy();
         });
 
+        it('should re-apply cleaned duplicate violations on sibling transactions in successData when moving to unreported report', async () => {
+            const mockAPIWrite = jest.spyOn(require('@libs/API'), 'write').mockImplementation(() => Promise.resolve());
+
+            const transactionA = generateTransaction({reportID: FAKE_OLD_REPORT_ID});
+            const transactionB = generateTransaction({reportID: FAKE_OLD_REPORT_ID});
+            const oldIOUActionA = createIOUAction(transactionA);
+            const oldIOUActionB = createIOUAction(transactionB);
+
+            const duplicateViolationA: TransactionViolation = {
+                name: CONST.VIOLATIONS.DUPLICATED_TRANSACTION,
+                type: CONST.VIOLATION_TYPES.VIOLATION,
+                data: {duplicates: [transactionB.transactionID]},
+            };
+            const duplicateViolationB: TransactionViolation = {
+                name: CONST.VIOLATIONS.DUPLICATED_TRANSACTION,
+                type: CONST.VIOLATION_TYPES.VIOLATION,
+                data: {duplicates: [transactionA.transactionID]},
+            };
+
+            await Onyx.merge(`${ONYXKEYS.COLLECTION.TRANSACTION}${transactionA.transactionID}`, transactionA);
+            await Onyx.merge(`${ONYXKEYS.COLLECTION.TRANSACTION}${transactionB.transactionID}`, transactionB);
+            await Onyx.merge(`${ONYXKEYS.COLLECTION.REPORT_ACTIONS}${FAKE_OLD_REPORT_ID}`, {
+                [oldIOUActionA.reportActionID]: oldIOUActionA,
+                [oldIOUActionB.reportActionID]: oldIOUActionB,
+            });
+            await Onyx.merge(`${ONYXKEYS.COLLECTION.TRANSACTION_VIOLATIONS}${transactionA.transactionID}`, [duplicateViolationA]);
+            await Onyx.merge(`${ONYXKEYS.COLLECTION.TRANSACTION_VIOLATIONS}${transactionB.transactionID}`, [duplicateViolationB]);
+
+            const allTransactions = {
+                [`${ONYXKEYS.COLLECTION.TRANSACTION}${transactionA.transactionID}`]: transactionA,
+                [`${ONYXKEYS.COLLECTION.TRANSACTION}${transactionB.transactionID}`]: transactionB,
+            };
+            const transactionViolations = {
+                [`${ONYXKEYS.COLLECTION.TRANSACTION_VIOLATIONS}${transactionA.transactionID}`]: [duplicateViolationA],
+                [`${ONYXKEYS.COLLECTION.TRANSACTION_VIOLATIONS}${transactionB.transactionID}`]: [duplicateViolationB],
+            };
+
+            changeTransactionsReport({
+                transactionIDs: [transactionA.transactionID],
+                isASAPSubmitBetaEnabled: false,
+                accountID: CURRENT_USER_ID,
+                email: 'test@example.com',
+                newReport: undefined,
+                policy: undefined,
+                allTransactions,
+                policyTagList: undefined,
+                transactionViolations,
+                allReports: undefined,
+            });
+            await waitForBatchedUpdates();
+
+            expect(mockAPIWrite).toHaveBeenCalled();
+
+            const apiWriteCall = mockAPIWrite.mock.calls.at(0);
+            const {optimisticData, successData, failureData} = (apiWriteCall?.[2] ?? {}) as {
+                optimisticData?: Array<{key: string; value: unknown}>;
+                successData?: Array<{key: string; value: unknown}>;
+                failureData?: Array<{key: string; value: unknown}>;
+            };
+
+            const siblingViolationsKey = `${ONYXKEYS.COLLECTION.TRANSACTION_VIOLATIONS}${transactionB.transactionID}`;
+            const optimisticSiblingUpdate = optimisticData?.find((data) => data.key === siblingViolationsKey);
+            const successSiblingUpdate = successData?.find((data) => data.key === siblingViolationsKey);
+            const failureSiblingUpdate = failureData?.find((data) => data.key === siblingViolationsKey);
+
+            expect(optimisticSiblingUpdate?.value).toBeNull();
+            expect(successSiblingUpdate?.value).toBeNull();
+            expect(failureSiblingUpdate?.value).toEqual([duplicateViolationB]);
+
+            mockAPIWrite.mockRestore();
+        });
+
         it('should clear convertedAmount on transaction when moving between workspaces with different currencies', async () => {
             const oldExpenseReport = {
                 ...createRandomReport(1, undefined),
