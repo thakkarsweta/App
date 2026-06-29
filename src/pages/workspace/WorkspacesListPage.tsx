@@ -94,7 +94,7 @@ function WorkspacesListPage() {
 
     for (const policy of workspaceListPolicies ?? []) {
         if (policy.isJoinRequestPending && policy.nonMemberDetails) {
-            const {policyID, ownerAccountID} = policy.nonMemberDetails;
+            const {policyID, ownerAccountID, ownerEmail} = policy.nonMemberDetails;
             const ownerDetails = ownerAccountID ? ownerDisplayDetails?.[ownerAccountID] : undefined;
 
             const pendingWorkspaceRow: WorkspaceRowData = {
@@ -110,9 +110,9 @@ function WorkspacesListPage() {
                 isDefault: activePolicyID === policyID,
                 shouldAnimateInHighlight: duplicateWorkspace?.policyID === policyID,
                 ownerAccountID,
-                ownerLogin: ownerDetails ? ownerDetails.login : undefined,
-                ownerAvatar: ownerDetails ? ownerDetails.avatar : undefined,
-                ownerName: ownerDetails ? getDisplayNameOrDefault(ownerDetails) : undefined,
+                ownerLogin: ownerDetails?.login ?? ownerEmail,
+                ownerAvatar: ownerDetails?.avatar,
+                ownerName: getDisplayNameOrDefault(ownerDetails, ownerEmail),
                 iconType: policy.nonMemberDetails.avatar ? CONST.ICON_TYPE_AVATAR : CONST.ICON_TYPE_ICON,
                 icon: policy.nonMemberDetails.avatar ? policy.nonMemberDetails.avatar : getDefaultWorkspaceAvatar(policy.name),
                 action: () => null,

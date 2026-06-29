@@ -352,6 +352,7 @@ describe('createWorkspaceListPoliciesSelector', () => {
                     name: 'External WS',
                     type: CONST.POLICY.TYPE.CORPORATE,
                     ownerAccountID: 99,
+                    ownerEmail: 'owner@example.com',
                     avatar: 'https://img/ext.png',
                 },
             },
@@ -364,6 +365,7 @@ describe('createWorkspaceListPoliciesSelector', () => {
             name: 'External WS',
             type: CONST.POLICY.TYPE.CORPORATE,
             ownerAccountID: 99,
+            ownerEmail: 'owner@example.com',
             avatar: 'https://img/ext.png',
         });
     });
