@@ -13,6 +13,12 @@ import type * as OnyxTypes from '@src/types/onyx';
 import type {Attendee} from '@src/types/onyx/IOU';
 import type {CurrentUserPersonalDetails} from '@src/types/onyx/PersonalDetails';
 
+const SPLIT_FORM_ERRORS = new Set<TranslationPaths>(['iou.error.invalidSplit', 'iou.error.invalidSplitParticipants', 'iou.error.invalidSplitYourself']);
+
+function shouldPreserveFormErrorOnFocusReset(formError: TranslationPaths | ''): boolean {
+    return formError.startsWith(CONST.VIOLATIONS_PREFIX) || (formError !== '' && SPLIT_FORM_ERRORS.has(formError));
+}
+
 type UseFormErrorManagementParams = {
     /** Transaction being confirmed */
     transaction: OnyxEntry<OnyxTypes.Transaction>;
@@ -214,9 +220,9 @@ function useFormErrorManagement({
         }
         // Check 1: If formError does NOT start with "violations.", clear it and return
         // Reset the form error whenever the screen gains or loses focus
-        // but preserve violation-related errors since those represent real validation issues
-        // that can only be resolved by fixing the underlying issue
-        if (currentFormError && !currentFormError.startsWith(CONST.VIOLATIONS_PREFIX)) {
+        // but preserve violation-related and split-validation errors since those represent real
+        // validation issues that can only be resolved by fixing the underlying issue
+        if (currentFormError && !shouldPreserveFormErrorOnFocusReset(currentFormError)) {
             setFormError('');
             return;
         }

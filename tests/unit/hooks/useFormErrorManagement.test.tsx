@@ -142,4 +142,30 @@ describe('useFormErrorManagement', () => {
         act(() => result.current.setFormError('iou.error.invalidMerchant'));
         expect(result.current.errorMessage).toBeDefined();
     });
+
+    it('preserves invalidSplit error when merchant becomes valid', async () => {
+        const initialProps: Params = {
+            ...baseParams,
+            isTypeSplit: true,
+            isPolicyExpenseChat: true,
+            isScanRequest: false,
+            iouMerchant: '',
+        };
+
+        const {result, rerender} = renderHook((params: Params) => useFormErrorManagement(params), {
+            wrapper: Wrapper,
+            initialProps,
+        });
+
+        act(() => result.current.setFormError('iou.error.invalidSplit'));
+        expect(result.current.formError).toBe('iou.error.invalidSplit');
+
+        rerender({
+            ...initialProps,
+            iouMerchant: 'test',
+        });
+
+        await waitForBatchedUpdatesWithAct();
+        expect(result.current.formError).toBe('iou.error.invalidSplit');
+    });
 });
