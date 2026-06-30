@@ -1,4 +1,5 @@
 import Config from 'react-native-config';
+import getPlatform from '@libs/getPlatform';
 import CONFIG from '@src/CONFIG';
 import CONST from '@src/CONST';
 import getEnvironment from './getEnvironment';
@@ -56,10 +57,24 @@ function getOldDotURLFromEnvironment(environment: Environment): string {
 }
 
 /**
+ * Returns the OldDot host to use for secure file downloads (CSV exports, PDF reports, etc.).
+ * On local web dev the API proxy forwards to production www.expensify.com, so secure downloads must
+ * use the same host — getOldDotURLFromEnvironment(DEV) points at www.expensify.com.dev, which is
+ * only reachable with a VM /etc/hosts entry.
+ */
+function getSecureDownloadBaseURL(environment: Environment): string {
+    if (environment === CONST.ENVIRONMENT.DEV && CONFIG.IS_USING_WEB_PROXY && getPlatform() === 'web' && CONFIG.EXPENSIFY.DEFAULT_API_ROOT === '/') {
+        return CONST.EXPENSIFY_URL;
+    }
+
+    return getOldDotURLFromEnvironment(environment);
+}
+
+/**
  * Get the corresponding oldDot URL based on the environment we are in
  */
 function getOldDotEnvironmentURL(): Promise<string> {
     return getEnvironment().then((environment) => OLDDOT_ENVIRONMENT_URLS[environment]);
 }
 
-export {isInternalTestBuild, isDevelopment, isProduction, getEnvironmentURL, getOldDotEnvironmentURL, getOldDotURLFromEnvironment};
+export {isInternalTestBuild, isDevelopment, isProduction, getEnvironmentURL, getOldDotEnvironmentURL, getOldDotURLFromEnvironment, getSecureDownloadBaseURL};

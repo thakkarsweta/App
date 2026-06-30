@@ -63,6 +63,7 @@ describe('ExportDownloadStatusModal', () => {
 
     beforeEach(async () => {
         jest.clearAllMocks();
+        mockFileDownload.mockResolvedValue(undefined);
         await Onyx.clear();
     });
 
@@ -119,6 +120,17 @@ describe('ExportDownloadStatusModal', () => {
 
         const expectedURLPart = `secure?secureType=csvexport&filename=${encodeURIComponent(CSV_FILE_NAME)}&downloadName=${encodeURIComponent(CSV_FILE_NAME)}`;
         expect(mockFileDownload).toHaveBeenCalledWith(expect.anything(), expect.stringContaining(expectedURLPart), CSV_FILE_NAME, expect.anything(), expect.anything());
+    });
+
+    it('auto-closes the modal after the export becomes ready and the download is triggered', async () => {
+        const onClose = jest.fn();
+        await Onyx.set(`${ONYXKEYS.COLLECTION.EXPORT_DOWNLOAD}${EXPORT_ID}`, {state: 'ready', fileName: CSV_FILE_NAME});
+
+        renderModal({onClose});
+        await waitForBatchedUpdatesWithAct();
+
+        expect(mockFileDownload).toHaveBeenCalled();
+        expect(onClose).toHaveBeenCalled();
     });
 
     it('auto-downloads PDF on ready state transition with pdfreport secureType', async () => {

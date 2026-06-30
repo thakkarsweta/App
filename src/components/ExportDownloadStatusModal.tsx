@@ -9,7 +9,7 @@ import useResponsiveLayout from '@hooks/useResponsiveLayout';
 import useThemeStyles from '@hooks/useThemeStyles';
 import addEncryptedAuthTokenToURL from '@libs/addEncryptedAuthTokenToURL';
 import {isMobileSafari} from '@libs/Browser';
-import {getOldDotURLFromEnvironment} from '@libs/Environment/Environment';
+import {getSecureDownloadBaseURL} from '@libs/Environment/Environment';
 import fileDownload from '@libs/fileDownload';
 import Navigation from '@libs/Navigation/Navigation';
 import {buildSecureDownloadURL} from '@libs/UrlUtils';
@@ -67,24 +67,33 @@ function ExportDownloadStatusModal({exportID, isVisible, onClose, failedBody}: E
     // Build the secure download URL the same way downloadReportPDF does, so the host always follows
     // the app's current environment (instead of the env baked into a backend-built URL) and authenticates
     // via the encryptedAuthToken — no separate OldDot sign-in needed.
-    const downloadFile = () => {
-        if (!fileName || !currentUserLogin) {
-            return;
+    const downloadFile = (): Promise<void> => {
+        if (displayedExport?.downloadURL) {
+            return fileDownload(translate, displayedExport.downloadURL, fileName ?? '', '', isMobileSafari());
         }
-        const baseURL = getOldDotURLFromEnvironment(environment);
+
+        if (!fileName || !currentUserLogin) {
+            return Promise.resolve();
+        }
+        const baseURL = getSecureDownloadBaseURL(environment);
         const isCSV = fileName.endsWith('.csv');
         const secureType = isCSV ? CONST.SECURE_DOWNLOAD_TYPE.CSV_EXPORT : CONST.SECURE_DOWNLOAD_TYPE.PDF_REPORT;
         const url = buildSecureDownloadURL({baseURL, secureType, fileName, downloadName: fileName, email: currentUserLogin});
-        fileDownload(translate, addEncryptedAuthTokenToURL(url, encryptedAuthToken ?? '', true), fileName, '', isMobileSafari());
+        return fileDownload(translate, addEncryptedAuthTokenToURL(url, encryptedAuthToken ?? '', true), fileName, '', isMobileSafari());
     };
 
     useEffect(() => {
-        if (!isReady || !fileName || shouldSendFromConcierge) {
+        if (!isReady || shouldSendFromConcierge) {
             return;
         }
-        downloadFile();
+        if (!fileName && !displayedExport?.downloadURL) {
+            return;
+        }
+        void Promise.resolve(downloadFile()).then(() => {
+            onClose();
+        });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isReady, fileName, shouldSendFromConcierge]);
+    }, [isReady, fileName, displayedExport?.downloadURL, shouldSendFromConcierge]);
 
     const handleSendFromConcierge = () => {
         sendExportFileFromConcierge(exportID, displayedExport ?? undefined);
@@ -98,10 +107,11 @@ function ExportDownloadStatusModal({exportID, isVisible, onClose, failedBody}: E
     };
 
     const handleDownloadFile = () => {
-        downloadFile();
-        // Clearing the export download is owned by the parent's onClose handler (it runs on every dismissal and
-        // skips the clear for the Concierge path). Clearing here too would queue a duplicate ClearExportDownload write.
-        onClose();
+        void Promise.resolve(downloadFile()).then(() => {
+            // Clearing the export download is owned by the parent's onClose handler (it runs on every dismissal and
+            // skips the clear for the Concierge path). Clearing here too would queue a duplicate ClearExportDownload write.
+            onClose();
+        });
     };
 
     const isNonDismissible = isPreparing;
